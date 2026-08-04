@@ -16,6 +16,11 @@ Ton vivant, jeune, avec une pointe d'humour dosée. Gratuit, sans compte, sans f
 - 🪟 **Deux modes en arrière-plan** : **mini-fenêtre flottante** (déplaçable + redimensionnable,
   par-dessus votre GPS, façon YouTube) ou **invisible** (audio seul). Bascule d'un mode à l'autre.
   Nécessite la permission « Afficher par-dessus les autres applications ».
+- 🗺️ **Carte au style médiéval** (OpenStreetMap teinté parchemin, sans clé API) avec des
+  **icônes de monuments façon jeu vidéo** (château, cathédrale, donjon, statue, ruine) aux vraies
+  coordonnées. Clic → photo réelle + « Écouter ».
+- 🧭 **Itinéraires scéniques optimisés** : saisissez une destination → l'appli sélectionne les plus
+  beaux lieux du couloir de trajet (classés par intérêt) et les ordonne le long de la route.
 
 ## Déployer gratuitement (zéro coût, zéro outil à installer)
 

@@ -230,6 +230,13 @@ object PlaybackController {
         maybePlayNext()
     }
 
+    /** Lance immédiatement le récit d'un lieu choisi (ex. depuis la carte). */
+    fun playNow(place: HistoryPlace) {
+        speech.stop()
+        busy = false
+        playPlace(place)
+    }
+
     fun toggleAuto() {
         _state.update { it.copy(autoContinue = !it.autoContinue) }
         if (_state.value.autoContinue) maybePlayNext()

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
@@ -91,6 +92,12 @@ fun CheminsApp(onRequestStart: () -> Unit, onEnterFloating: () -> Unit = {}) {
                     NavigationBarItem(
                         selected = tab == 1,
                         onClick = { tab = 1 },
+                        icon = { Icon(Icons.Filled.Map, contentDescription = null) },
+                        label = { Text("Carte") }
+                    )
+                    NavigationBarItem(
+                        selected = tab == 2,
+                        onClick = { tab = 2 },
                         icon = { Icon(Icons.Filled.Bookmark, contentDescription = null) },
                         label = { Text("Mes récits") }
                     )
@@ -100,6 +107,7 @@ fun CheminsApp(onRequestStart: () -> Unit, onEnterFloating: () -> Unit = {}) {
             Column(Modifier.fillMaxSize().padding(padding)) {
                 when (tab) {
                     0 -> PlayerScreen(ui, onRequestStart, onEnterFloating)
+                    1 -> MapScreen(ui)
                     else -> SavedScreen(saved)
                 }
             }
