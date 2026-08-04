@@ -19,11 +19,13 @@ Ton vivant, jeune, avec une pointe d'humour dosée. Gratuit, sans compte, sans f
 Tout se compile **dans le cloud** via GitHub Actions. Vous n'avez besoin **que d'un compte GitHub**.
 
 ### 1. Mettre le code sur GitHub
+Ce dossier est **déjà un dépôt git isolé** (branche `main`, 1er commit fait). Créez un
+dépôt vide sur GitHub nommé `chemins-dhistoire`, puis :
 ```bash
 git remote add origin https://github.com/VOTRE-PSEUDO/chemins-dhistoire.git
-git push -u origin feat/android-app:main
+git push -u origin main
 ```
-> Le push sur `main` déclenche automatiquement le build.
+> Le push sur `main` déclenche automatiquement le build de l'APK.
 
 ### 2. Laisser GitHub Actions compiler l'APK
 - Onglet **Actions** de votre dépôt → le workflow **Build APK** se lance seul.
