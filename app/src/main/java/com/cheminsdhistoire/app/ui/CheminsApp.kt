@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Button
@@ -72,7 +73,7 @@ private val AppColors = darkColorScheme(
 )
 
 @Composable
-fun CheminsApp(onRequestStart: () -> Unit) {
+fun CheminsApp(onRequestStart: () -> Unit, onEnterFloating: () -> Unit = {}) {
     MaterialTheme(colorScheme = AppColors) {
         val ui by PlaybackController.state.collectAsStateWithLifecycle()
         val saved by PlaybackController.saved.collectAsStateWithLifecycle()
@@ -98,7 +99,7 @@ fun CheminsApp(onRequestStart: () -> Unit) {
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding)) {
                 when (tab) {
-                    0 -> PlayerScreen(ui, onRequestStart)
+                    0 -> PlayerScreen(ui, onRequestStart, onEnterFloating)
                     else -> SavedScreen(saved)
                 }
             }
@@ -107,7 +108,11 @@ fun CheminsApp(onRequestStart: () -> Unit) {
 }
 
 @Composable
-private fun PlayerScreen(ui: PlayerUiState, onRequestStart: () -> Unit) {
+private fun PlayerScreen(
+    ui: PlayerUiState,
+    onRequestStart: () -> Unit,
+    onEnterFloating: () -> Unit
+) {
     val scroll = rememberScrollState()
     Column(
         Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp),
@@ -128,6 +133,21 @@ private fun PlayerScreen(ui: PlayerUiState, onRequestStart: () -> Unit) {
         StoryCard(ui)
 
         ControlsRow(ui, onRequestStart)
+
+        OutlinedButton(
+            onClick = onEnterFloating,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Filled.PictureInPictureAlt, contentDescription = null)
+            Spacer(Modifier.size(8.dp))
+            Text("Réduire en fenêtre flottante")
+        }
+        Text(
+            "Le récit continue en arrière-plan (même pendant votre GPS). Choisissez une "
+                + "mini-fenêtre déplaçable, ou fermez-la pour l'audio seul.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         SettingsRow(ui)
 

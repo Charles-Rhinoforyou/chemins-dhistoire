@@ -13,6 +13,9 @@ Ton vivant, jeune, avec une pointe d'humour dosée. Gratuit, sans compte, sans f
 - 🔄 **Enchaînement intelligent** : un récit n'est **jamais coupé** ; la file s'ajuste à la route.
 - 💾 **Sauvegarde** : gardez vos récits pour les réécouter plus tard, hors connexion.
 - 🚗 **Écran éteint** : lecture continue en voiture grâce à un service de premier plan.
+- 🪟 **Deux modes en arrière-plan** : **mini-fenêtre flottante** (déplaçable + redimensionnable,
+  par-dessus votre GPS, façon YouTube) ou **invisible** (audio seul). Bascule d'un mode à l'autre.
+  Nécessite la permission « Afficher par-dessus les autres applications ».
 
 ## Déployer gratuitement (zéro coût, zéro outil à installer)
 
