@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chemins d'Histoire — Installer l'application</title>
+<style>
+  :root { --bg:#1A1712; --card:#262019; --gold:#D9A441; --cream:#F2E9D8; --muted:#CFC1A8; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         background:var(--bg); color:var(--cream); line-height:1.6; }
+  .wrap { max-width:720px; margin:0 auto; padding:32px 20px 64px; }
+  h1 { color:var(--gold); font-size:2rem; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 28px; }
+  .card { background:var(--card); border-radius:16px; padding:22px; margin:18px 0;
+          border:1px solid #3a2f22; }
+  a.btn { display:inline-block; background:var(--gold); color:#2A1D08; font-weight:700;
+          text-decoration:none; padding:16px 26px; border-radius:12px; font-size:1.05rem; }
+  a.btn:active { transform:translateY(1px); }
+  ol { padding-left:22px; } li { margin:8px 0; }
+  code { background:#0f0d0a; padding:2px 7px; border-radius:6px; color:var(--gold); font-size:.9em; }
+  .badge { display:inline-block; background:#332a20; color:var(--muted); border-radius:20px;
+           padding:4px 12px; font-size:.8rem; margin-bottom:16px; }
+  .muted { color:var(--muted); font-size:.9rem; }
+  footer { color:var(--muted); font-size:.8rem; margin-top:40px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="badge">Application Android · gratuite · sans compte</div>
+  <h1>Chemins d'Histoire</h1>
+  <p class="sub">Le podcast d'Histoire de France qui suit vos pas en temps réel, au fil du GPS.</p>
+
+  <div class="card" style="text-align:center">
+    <a id="download" class="btn" href="#">📥 Télécharger l'application (.apk)</a>
+    <p class="muted" id="dllabel" style="margin-top:14px">Dernière version</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Installer en 4 étapes</h3>
+    <ol>
+      <li>Appuyez sur <b>Télécharger l'application</b> ci-dessus, depuis votre téléphone Android.</li>
+      <li>Ouvrez le fichier <code>chemins-dhistoire.apk</code> téléchargé.</li>
+      <li>Android demandera d'<b>autoriser l'installation depuis cette source</b> : acceptez (c'est normal pour une appli hors Play Store).</li>
+      <li>Ouvrez l'appli, autorisez la <b>localisation</b>, et mettez-vous en route. 🚗</li>
+    </ol>
+    <p class="muted">Astuce : gardez l'écran allumé et le son activé. En voiture, l'appli continue
+      de raconter même écran verrouillé grâce à sa notification de lecture.</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Comment ça marche</h3>
+    <p>À chaque déplacement, l'appli cherche les monuments, châteaux et personnages célèbres
+       autour de vous via <b>Wikipedia géolocalisé</b>, transforme les informations en récit
+       vivant et le lit à voix haute. Un récit n'est jamais coupé : la file s'ajuste à votre route.
+       Vous pouvez <b>garder</b> vos récits préférés pour les réécouter plus tard, hors connexion.</p>
+  </div>
+
+  <footer>Contenu issu de Wikipédia (CC BY-SA). Projet éducatif, sans publicité ni frais.</footer>
+</div>
+
+<script>
+  // Construit automatiquement le lien de téléchargement vers la Release GitHub,
+  // à partir de l'URL des GitHub Pages (https://OWNER.github.io/REPO/).
+  (function () {
+    var link = document.getElementById('download');
+    var host = location.hostname;      // owner.github.io
+    var parts = location.pathname.split('/').filter(Boolean);
+    var owner = host.split('.')[0];
+    var repo = parts.length > 0 ? parts[0] : '';
+    if (host.endsWith('github.io') && owner && repo) {
+      link.href = 'https://github.com/' + owner + '/' + repo +
+                  '/releases/latest/download/chemins-dhistoire.apk';
+    } else {
+      // Aperçu local : remplacez OWNER/REPO par votre dépôt.
+      link.href = 'https://github.com/OWNER/REPO/releases/latest/download/chemins-dhistoire.apk';
+      document.getElementById('dllabel').textContent =
+        'Ouvrez cette page via GitHub Pages pour un lien automatique.';
+    }
+  })();
+</script>
+</body>
+</html>

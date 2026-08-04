@@ -1,0 +1,6 @@
+# Normalise les fins de ligne en LF (cohérence multi-plateforme, CI Linux).
+* text=auto eol=lf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.apk binary

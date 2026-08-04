@@ -1,0 +1,285 @@
+package com.cheminsdhistoire.app.playback
+
+import android.content.Context
+import android.util.Log
+import com.cheminsdhistoire.app.audio.SpeechManager
+import com.cheminsdhistoire.app.data.JourneyStore
+import com.cheminsdhistoire.app.data.WikipediaService
+import com.cheminsdhistoire.app.location.LocationProvider
+import com.cheminsdhistoire.app.model.GeoPoint
+import com.cheminsdhistoire.app.model.HistoryPlace
+import com.cheminsdhistoire.app.model.JourneyEntry
+import com.cheminsdhistoire.app.model.NarratedStory
+import com.cheminsdhistoire.app.model.PlaybackState
+import com.cheminsdhistoire.app.model.PlayerUiState
+import com.cheminsdhistoire.app.narration.LlmNarrator
+import com.cheminsdhistoire.app.narration.NarrationEngine
+import com.cheminsdhistoire.app.narration.NarrationUtils
+import com.cheminsdhistoire.app.narration.TemplateNarrator
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+
+/**
+ * Le « cerveau » de l'application. Processus unique, partagé entre le service de
+ * premier plan et l'interface.
+ *
+ * Règles clés :
+ *  - la position GPS réelle pilote tout et recalcule la file en continu ;
+ *  - un récit en cours n'est JAMAIS coupé : on ne réordonne que la file à venir ;
+ *  - le contenu reste dans le contexte du lieu (source Wikipedia géolocalisée).
+ */
+object PlaybackController {
+
+    private const val TAG = "PlaybackController"
+    private const val REFRESH_DISTANCE_M = 2_500.0
+    private const val MIN_UNSEEN_QUEUE = 3
+    private const val SEARCH_RADIUS_M = 10_000
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    private lateinit var wiki: WikipediaService
+    private lateinit var store: JourneyStore
+    private lateinit var location: LocationProvider
+    private lateinit var speech: SpeechManager
+    private lateinit var templateNarrator: TemplateNarrator
+    private lateinit var llmNarrator: LlmNarrator
+    private var engine: NarrationEngine? = null
+
+    private val seen = LinkedHashSet<Long>()
+    private var lastFetchPoint: GeoPoint? = null
+    @Volatile private var fetching = false
+    @Volatile private var busy = false
+    private var initialized = false
+
+    private var locationJob: Job? = null
+
+    private val _state = MutableStateFlow(PlayerUiState())
+    val state: StateFlow<PlayerUiState> = _state.asStateFlow()
+
+    private val _saved = MutableStateFlow<List<JourneyEntry>>(emptyList())
+    val saved: StateFlow<List<JourneyEntry>> = _saved.asStateFlow()
+
+    fun init(context: Context) {
+        if (initialized) return
+        val app = context.applicationContext
+        wiki = WikipediaService()
+        store = JourneyStore(app)
+        location = LocationProvider(app)
+        templateNarrator = TemplateNarrator()
+        llmNarrator = LlmNarrator(app)
+        engine = templateNarrator
+        speech = SpeechManager(
+            context = app,
+            onReady = { ok -> if (!ok) setMessage("Synthèse vocale indisponible sur cet appareil.") },
+            onSegment = { idx -> _state.update { it.copy(currentSegmentIndex = idx) } },
+            onFinished = { onStoryFinished() }
+        )
+        initialized = true
+        scope.launch { _saved.value = store.load() }
+    }
+
+    /** Active l'IA locale si un modèle est présent, sinon garde le narrateur local. */
+    fun setUseLlm(useLlm: Boolean) {
+        engine = if (useLlm && llmNarrator.isModelPresent()) llmNarrator else templateNarrator
+        _state.update { it.copy(narratorMode = engine?.label ?: "Narrateur local") }
+    }
+
+    fun start() {
+        if (!initialized) return
+        if (locationJob?.isActive == true) return
+        _state.update { it.copy(playbackState = PlaybackState.SEARCHING, message = "Recherche de votre position…") }
+        locationJob = scope.launch {
+            location.locationUpdates().collect { loc ->
+                onLocation(GeoPoint(loc.latitude, loc.longitude))
+            }
+        }
+    }
+
+    fun stopEngine() {
+        locationJob?.cancel()
+        locationJob = null
+        speech.stop()
+        _state.update { it.copy(playbackState = PlaybackState.IDLE) }
+    }
+
+    private fun onLocation(point: GeoPoint) {
+        // 1. Réordonne la file selon la nouvelle position (sans toucher au récit en cours).
+        val requeued = _state.value.queue
+            .map { it.copy(distanceMeters = LocationProvider.distanceMeters(point.lat, point.lon, it.lat, it.lon)) }
+            .sortedBy { it.distanceMeters }
+        _state.update { it.copy(location = point, queue = requeued) }
+
+        // 2. Faut-il rafraîchir les lieux proches ?
+        val moved = lastFetchPoint?.let {
+            LocationProvider.distanceMeters(it.lat, it.lon, point.lat, point.lon)
+        } ?: Double.MAX_VALUE
+        val unseenCount = requeued.count { it.pageId !in seen }
+        if (!fetching && (moved > REFRESH_DISTANCE_M || unseenCount < MIN_UNSEEN_QUEUE)) {
+            fetchNearby(point)
+        }
+
+        // 3. Si rien n'est en cours et lecture auto activée, on lance le prochain récit.
+        maybePlayNext()
+    }
+
+    private fun fetchNearby(point: GeoPoint) {
+        fetching = true
+        scope.launch {
+            try {
+                val found = wiki.nearbyPlaces(point.lat, point.lon, SEARCH_RADIUS_M, 20)
+                lastFetchPoint = point
+                val existing = _state.value.queue.associateBy { it.pageId }.toMutableMap()
+                found.forEach { p ->
+                    if (p.pageId !in seen) existing[p.pageId] = p
+                }
+                val merged = existing.values.sortedBy { it.distanceMeters }
+                _state.update { it.copy(queue = merged) }
+                if (merged.isEmpty() && _state.value.currentStory == null) {
+                    setMessage("Aucun lieu historique référencé à proximité pour l'instant.")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Échec de la recherche Wikipedia : ${e.message}")
+            } finally {
+                fetching = false
+                maybePlayNext()
+            }
+        }
+    }
+
+    private fun maybePlayNext() {
+        if (busy) return
+        val s = _state.value
+        if (!s.autoContinue) return
+        if (s.playbackState == PlaybackState.SPEAKING || s.playbackState == PlaybackState.PAUSED ||
+            s.playbackState == PlaybackState.GENERATING
+        ) return
+        val next = s.queue.firstOrNull { it.pageId !in seen } ?: return
+        playPlace(next)
+    }
+
+    private fun playPlace(place: HistoryPlace) {
+        if (busy) return
+        busy = true
+        seen.add(place.pageId)
+        _state.update {
+            it.copy(
+                playbackState = PlaybackState.GENERATING,
+                message = "Écriture du récit : ${place.title}…",
+                queue = it.queue.filterNot { q -> q.pageId == place.pageId }
+            )
+        }
+        scope.launch {
+            try {
+                val story = (engine ?: templateNarrator).narrate(place)
+                _state.update {
+                    it.copy(
+                        currentStory = story,
+                        currentSegmentIndex = 0,
+                        playbackState = PlaybackState.SPEAKING,
+                        message = null
+                    )
+                }
+                speech.speakStory(story)
+            } catch (e: Exception) {
+                Log.w(TAG, "Échec de narration : ${e.message}")
+                _state.update { it.copy(playbackState = PlaybackState.IDLE) }
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    private fun onStoryFinished() {
+        // Appelé depuis un thread de la synthèse vocale → on revient sur le thread principal.
+        scope.launch {
+            _state.update { it.copy(playbackState = PlaybackState.IDLE) }
+            maybePlayNext()
+        }
+    }
+
+    // --- Commandes de l'interface ---
+
+    fun pause() {
+        if (_state.value.playbackState == PlaybackState.SPEAKING) {
+            speech.stop()
+            _state.update { it.copy(playbackState = PlaybackState.PAUSED) }
+        }
+    }
+
+    fun resume() {
+        val s = _state.value
+        if (s.playbackState == PlaybackState.PAUSED && s.currentStory != null) {
+            _state.update { it.copy(playbackState = PlaybackState.SPEAKING) }
+            speech.speakStory(s.currentStory, s.currentSegmentIndex)
+        } else {
+            start()
+            maybePlayNext()
+        }
+    }
+
+    fun skip() {
+        speech.stop()
+        _state.update { it.copy(playbackState = PlaybackState.IDLE) }
+        maybePlayNext()
+    }
+
+    fun toggleAuto() {
+        _state.update { it.copy(autoContinue = !it.autoContinue) }
+        if (_state.value.autoContinue) maybePlayNext()
+    }
+
+    fun saveCurrent() {
+        val story = _state.value.currentStory ?: return
+        scope.launch {
+            _saved.value = store.add(
+                JourneyEntry(
+                    title = story.title,
+                    script = story.script,
+                    imageUrl = story.imageUrl,
+                    sourceUrl = story.sourceUrl,
+                    lat = story.place.lat,
+                    lon = story.place.lon
+                )
+            )
+            setMessage("Récit sauvegardé : ${story.title}")
+        }
+    }
+
+    fun deleteSaved(entry: JourneyEntry) {
+        scope.launch { _saved.value = store.remove(entry) }
+    }
+
+    /** Rejoue un récit sauvegardé (met en pause la lecture automatique). */
+    fun replaySaved(entry: JourneyEntry) {
+        _state.update { it.copy(autoContinue = false, playbackState = PlaybackState.SPEAKING) }
+        val place = HistoryPlace(
+            pageId = -1, title = entry.title, lat = entry.lat, lon = entry.lon,
+            extract = entry.script, thumbnailUrl = entry.imageUrl,
+            pageUrl = entry.sourceUrl, distanceMeters = 0.0
+        )
+        val story = NarratedStory(
+            place = place, title = entry.title, script = entry.script,
+            segments = NarrationUtils.toSegments(entry.script),
+            imageUrl = entry.imageUrl, sourceUrl = entry.sourceUrl
+        )
+        _state.update { it.copy(currentStory = story, currentSegmentIndex = 0) }
+        speech.speakStory(story)
+    }
+
+    private fun setMessage(msg: String) {
+        _state.update { it.copy(message = msg) }
+    }
+
+    fun shutdown() {
+        locationJob?.cancel()
+        speech.shutdown()
+        initialized = false
+    }
+}

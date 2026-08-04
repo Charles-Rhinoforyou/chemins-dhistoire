@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Chemins d\'Histoire</string>
+    <string name="channel_playback_name">Lecture des récits</string>
+    <string name="channel_playback_desc">Récits historiques géolocalisés en cours de lecture</string>
+    <string name="notif_default_title">Chemins d\'Histoire</string>
+    <string name="notif_default_text">À l\'écoute de l\'Histoire autour de vous…</string>
+</resources>

@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Un donjon stylisé + note d'écoute : Histoire + audio -->
+    <path
+        android:fillColor="#F2D9A0"
+        android:pathData="M40,34h28v40h-28z" />
+    <path
+        android:fillColor="#F2D9A0"
+        android:pathData="M40,30h6v6h-6z M51,30h6v6h-6z M62,30h6v6h-6z" />
+    <path
+        android:fillColor="#3A2E1F"
+        android:pathData="M50,50h8v24h-8z" />
+    <path
+        android:fillColor="#C8A15A"
+        android:pathData="M54,74m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0" />
+    <path
+        android:fillColor="#F2D9A0"
+        android:pathData="M54,74m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+</vector>
