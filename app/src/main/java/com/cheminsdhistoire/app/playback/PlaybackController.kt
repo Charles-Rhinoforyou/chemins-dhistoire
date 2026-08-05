@@ -2,7 +2,9 @@ package com.cheminsdhistoire.app.playback
 
 import android.content.Context
 import android.util.Log
+import com.cheminsdhistoire.app.audio.GeminiVoice
 import com.cheminsdhistoire.app.audio.SpeechManager
+import com.cheminsdhistoire.app.audio.VoiceEngine
 import com.cheminsdhistoire.app.data.JourneyStore
 import com.cheminsdhistoire.app.data.SettingsStore
 import com.cheminsdhistoire.app.data.WikipediaService
@@ -52,6 +54,8 @@ object PlaybackController {
     private lateinit var store: JourneyStore
     private lateinit var location: LocationProvider
     private lateinit var speech: SpeechManager
+    private lateinit var geminiVoice: GeminiVoice
+    private lateinit var voice: VoiceEngine
     private lateinit var templateNarrator: TemplateNarrator
     private lateinit var llmNarrator: LlmNarrator
     private lateinit var geminiNarrator: GeminiNarrator
@@ -89,8 +93,16 @@ object PlaybackController {
             onSegment = { idx -> _state.update { it.copy(currentSegmentIndex = idx) } },
             onFinished = { onStoryFinished() }
         )
+        geminiVoice = GeminiVoice(
+            settings = settings,
+            fallback = speech,
+            onSegment = { idx -> _state.update { it.copy(currentSegmentIndex = idx) } },
+            onFinished = { onStoryFinished() }
+        )
+        voice = speech
         initialized = true
         applyEngineChoice()
+        applyVoiceChoice()
         scope.launch { _saved.value = store.load() }
     }
 
@@ -121,6 +133,21 @@ object PlaybackController {
 
     fun hasGeminiKey(): Boolean = settings.geminiKey.isNotBlank()
 
+    private fun applyVoiceChoice() {
+        voice = if (settings.useGeminiVoice && settings.geminiKey.isNotBlank()) geminiVoice else speech
+    }
+
+    /** Bascule voix neurale Gemini / voix du téléphone (reprend le récit en cours). */
+    fun setUseGeminiVoice(useVoice: Boolean) {
+        settings.useGeminiVoice = useVoice
+        val wasSpeaking = _state.value.playbackState == PlaybackState.SPEAKING
+        val story = _state.value.currentStory
+        val idx = _state.value.currentSegmentIndex
+        voice.stop()
+        applyVoiceChoice()
+        if (wasSpeaking && story != null) voice.speakStory(story, idx)
+    }
+
     fun start() {
         if (!initialized) return
         if (locationJob?.isActive == true) return
@@ -138,7 +165,7 @@ object PlaybackController {
     fun stopEngine() {
         locationJob?.cancel()
         locationJob = null
-        speech.stop()
+        voice.stop()
         _state.update { it.copy(playbackState = PlaybackState.IDLE) }
     }
 
@@ -221,7 +248,7 @@ object PlaybackController {
                         message = null
                     )
                 }
-                speech.speakStory(story)
+                voice.speakStory(story)
             } catch (e: Exception) {
                 Log.w(TAG, "Échec de narration : ${e.message}")
                 _state.update { it.copy(playbackState = PlaybackState.IDLE) }
@@ -243,7 +270,7 @@ object PlaybackController {
 
     fun pause() {
         if (_state.value.playbackState == PlaybackState.SPEAKING) {
-            speech.stop()
+            voice.stop()
             _state.update { it.copy(playbackState = PlaybackState.PAUSED) }
         }
     }
@@ -252,7 +279,7 @@ object PlaybackController {
         val s = _state.value
         if (s.playbackState == PlaybackState.PAUSED && s.currentStory != null) {
             _state.update { it.copy(playbackState = PlaybackState.SPEAKING) }
-            speech.speakStory(s.currentStory, s.currentSegmentIndex)
+            voice.speakStory(s.currentStory, s.currentSegmentIndex)
         } else {
             start()
             maybePlayNext()
@@ -260,14 +287,14 @@ object PlaybackController {
     }
 
     fun skip() {
-        speech.stop()
+        voice.stop()
         _state.update { it.copy(playbackState = PlaybackState.IDLE) }
         maybePlayNext()
     }
 
     /** Lance immédiatement le récit d'un lieu choisi (ex. depuis la carte). */
     fun playNow(place: HistoryPlace) {
-        speech.stop()
+        voice.stop()
         busy = false
         playPlace(place)
     }
@@ -318,7 +345,7 @@ object PlaybackController {
             imageUrl = entry.imageUrl, sourceUrl = entry.sourceUrl
         )
         _state.update { it.copy(currentStory = story, currentSegmentIndex = 0) }
-        speech.speakStory(story)
+        voice.speakStory(story)
     }
 
     private fun setMessage(msg: String) {
@@ -328,6 +355,7 @@ object PlaybackController {
     fun shutdown() {
         locationJob?.cancel()
         speech.shutdown()
+        geminiVoice.shutdown()
         initialized = false
     }
 }

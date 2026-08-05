@@ -311,6 +311,7 @@ private fun AiSettingsCard() {
     val store = remember { SettingsStore(context) }
     var key by remember { mutableStateOf(store.geminiKey) }
     var useGemini by remember { mutableStateOf(store.useGemini) }
+    var useVoice by remember { mutableStateOf(store.useGeminiVoice) }
     var saved by remember { mutableStateOf(store.geminiKey.isNotBlank()) }
 
     Card(
@@ -370,6 +371,17 @@ private fun AiSettingsCard() {
                     onCheckedChange = { useGemini = it; PlaybackController.setUseGemini(it) }
                 )
             }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Voix neurale Gemini (plus naturelle)", color = MaterialTheme.colorScheme.onBackground)
+                Switch(
+                    checked = useVoice,
+                    onCheckedChange = { useVoice = it; PlaybackController.setUseGeminiVoice(it) }
+                )
+            }
         }
     }
 }
@@ -424,6 +436,12 @@ private fun SettingsRow(ui: PlayerUiState) {
 
 @Composable
 private fun StatusBlock(ui: PlayerUiState) {
+    val context = LocalContext.current
+    val version = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: "?"
+    }
     val loc = ui.location
     val locText = if (loc != null)
         "GPS : ${"%.4f".format(loc.lat)}, ${"%.4f".format(loc.lon)}"
@@ -433,6 +451,11 @@ private fun StatusBlock(ui: PlayerUiState) {
         Text(
             "État : ${stateLabel(ui.playbackState)}  •  ${ui.narratorMode}",
             fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            "Chemins d'Histoire · version $version",
+            fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }

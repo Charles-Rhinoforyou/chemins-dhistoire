@@ -28,6 +28,8 @@ Ton vivant, jeune, avec une pointe d'humour dosée. Gratuit, sans compte, sans f
   sens de la marche, flèche de position, trajectoire et monuments visibles.
 - 🤖 **Récits IA Gemini (optionnel, gratuit)** : chacun colle sa **clé Gemini gratuite** (Google AI
   Studio) dans Réglages IA → récits nettement plus riches. Repli auto sur le narrateur local.
+- 🔊 **Voix neurale Gemini (optionnel, gratuit)** : voix beaucoup plus naturelle que celle du
+  téléphone (API Gemini TTS, même clé gratuite). Repli auto sur la voix du téléphone si indisponible.
 
 > Obtenir une clé Gemini gratuite : https://aistudio.google.com/app/apikey (bouton « Create API key »).
 

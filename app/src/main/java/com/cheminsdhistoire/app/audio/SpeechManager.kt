@@ -16,14 +16,14 @@ class SpeechManager(
     private val onReady: (Boolean) -> Unit,
     private val onSegment: (Int) -> Unit,
     private val onFinished: () -> Unit
-) {
+) : VoiceEngine {
     private var tts: TextToSpeech? = null
     private var ready = false
 
     private var segments: List<String> = emptyList()
     private var baseIndex = 0
 
-    val isReady: Boolean get() = ready
+    override val isReady: Boolean get() = ready
 
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
@@ -56,7 +56,7 @@ class SpeechManager(
     }
 
     /** Lit un récit à partir d'un segment donné (0 par défaut). */
-    fun speakStory(story: NarratedStory, fromSegment: Int = 0) {
+    override fun speakStory(story: NarratedStory, fromSegment: Int) {
         val engine = tts ?: return
         segments = story.segments
         baseIndex = fromSegment.coerceIn(0, (segments.size - 1).coerceAtLeast(0))
@@ -67,11 +67,11 @@ class SpeechManager(
         }
     }
 
-    fun stop() {
+    override fun stop() {
         tts?.stop()
     }
 
-    fun shutdown() {
+    override fun shutdown() {
         tts?.stop()
         tts?.shutdown()
         tts = null

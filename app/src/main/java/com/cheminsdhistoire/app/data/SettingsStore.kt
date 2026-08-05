@@ -20,9 +20,14 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_USE_LLM, false)
         set(v) = prefs.edit().putBoolean(KEY_USE_LLM, v).apply()
 
+    var useGeminiVoice: Boolean
+        get() = prefs.getBoolean(KEY_USE_GEMINI_VOICE, false)
+        set(v) = prefs.edit().putBoolean(KEY_USE_GEMINI_VOICE, v).apply()
+
     companion object {
         private const val KEY_GEMINI = "gemini_key"
         private const val KEY_USE_GEMINI = "use_gemini"
         private const val KEY_USE_LLM = "use_llm"
+        private const val KEY_USE_GEMINI_VOICE = "use_gemini_voice"
     }
 }
