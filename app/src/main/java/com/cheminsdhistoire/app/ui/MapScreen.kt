@@ -25,9 +25,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledIconButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -340,11 +340,11 @@ fun MapScreen(ui: PlayerUiState) {
                 onClick = { navMode = !navMode },
                 modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
                 colors = if (navMode) {
-                    FilledIconButtonDefaults.filledIconButtonColors(
+                    IconButtonDefaults.filledIconButtonColors(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 } else {
-                    FilledIconButtonDefaults.filledIconButtonColors(
+                    IconButtonDefaults.filledIconButtonColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     )
                 }
