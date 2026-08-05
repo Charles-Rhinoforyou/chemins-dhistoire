@@ -4,7 +4,9 @@ import android.content.Context
 import android.util.Log
 import com.cheminsdhistoire.app.audio.SpeechManager
 import com.cheminsdhistoire.app.data.JourneyStore
+import com.cheminsdhistoire.app.data.SettingsStore
 import com.cheminsdhistoire.app.data.WikipediaService
+import com.cheminsdhistoire.app.narration.GeminiNarrator
 import com.cheminsdhistoire.app.location.LocationProvider
 import com.cheminsdhistoire.app.map.Era
 import com.cheminsdhistoire.app.map.EraClassifier
@@ -52,6 +54,8 @@ object PlaybackController {
     private lateinit var speech: SpeechManager
     private lateinit var templateNarrator: TemplateNarrator
     private lateinit var llmNarrator: LlmNarrator
+    private lateinit var geminiNarrator: GeminiNarrator
+    private lateinit var settings: SettingsStore
     private var engine: NarrationEngine? = null
 
     private val seen = LinkedHashSet<Long>()
@@ -74,8 +78,10 @@ object PlaybackController {
         wiki = WikipediaService()
         store = JourneyStore(app)
         location = LocationProvider(app)
+        settings = SettingsStore(app)
         templateNarrator = TemplateNarrator()
         llmNarrator = LlmNarrator(app)
+        geminiNarrator = GeminiNarrator(settings)
         engine = templateNarrator
         speech = SpeechManager(
             context = app,
@@ -84,14 +90,36 @@ object PlaybackController {
             onFinished = { onStoryFinished() }
         )
         initialized = true
+        applyEngineChoice()
         scope.launch { _saved.value = store.load() }
     }
 
-    /** Active l'IA locale si un modèle est présent, sinon garde le narrateur local. */
-    fun setUseLlm(useLlm: Boolean) {
-        engine = if (useLlm && llmNarrator.isModelPresent()) llmNarrator else templateNarrator
+    /** Choisit le moteur de narration selon les réglages (Gemini > IA locale > local). */
+    private fun applyEngineChoice() {
+        engine = when {
+            settings.useGemini && settings.geminiKey.isNotBlank() -> geminiNarrator
+            settings.useLlm && llmNarrator.isModelPresent() -> llmNarrator
+            else -> templateNarrator
+        }
         _state.update { it.copy(narratorMode = engine?.label ?: "Narrateur local") }
     }
+
+    fun setUseLlm(useLlm: Boolean) {
+        settings.useLlm = useLlm
+        applyEngineChoice()
+    }
+
+    fun setUseGemini(useGemini: Boolean) {
+        settings.useGemini = useGemini
+        applyEngineChoice()
+    }
+
+    fun setGeminiKey(key: String) {
+        settings.geminiKey = key
+        applyEngineChoice()
+    }
+
+    fun hasGeminiKey(): Boolean = settings.geminiKey.isNotBlank()
 
     fun start() {
         if (!initialized) return

@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -45,6 +46,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.cheminsdhistoire.app.data.SettingsStore
 import com.cheminsdhistoire.app.map.Era
 import com.cheminsdhistoire.app.model.JourneyEntry
 import com.cheminsdhistoire.app.model.PlaybackState
@@ -163,6 +166,8 @@ private fun PlayerScreen(
         )
 
         SettingsRow(ui)
+
+        AiSettingsCard()
 
         StatusBlock(ui)
 
@@ -296,6 +301,75 @@ private fun ControlsRow(ui: PlayerUiState, onRequestStart: () -> Unit) {
             Icon(Icons.Filled.Bookmark, contentDescription = null)
             Spacer(Modifier.size(6.dp))
             Text("Garder")
+        }
+    }
+}
+
+@Composable
+private fun AiSettingsCard() {
+    val context = LocalContext.current
+    val store = remember { SettingsStore(context) }
+    var key by remember { mutableStateOf(store.geminiKey) }
+    var useGemini by remember { mutableStateOf(store.useGemini) }
+    var saved by remember { mutableStateOf(store.geminiKey.isNotBlank()) }
+
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "Réglages IA — qualité des récits",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                "Avec ta clé Gemini gratuite, les récits sont bien plus riches. "
+                    + "La clé reste sur ton téléphone.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/app/apikey"))
+                    )
+                }
+            }) {
+                Icon(Icons.Filled.OpenInNew, contentDescription = null)
+                Spacer(Modifier.size(6.dp))
+                Text("Obtenir une clé gratuite")
+            }
+            OutlinedTextField(
+                value = key,
+                onValueChange = { key = it; saved = false },
+                label = { Text("Clé API Gemini (AIza…)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = { PlaybackController.setGeminiKey(key); saved = true }) {
+                    Text("Enregistrer")
+                }
+                Spacer(Modifier.size(10.dp))
+                Text(
+                    if (saved && key.isNotBlank()) "Clé enregistrée ✓" else "Aucune clé",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Utiliser Gemini pour les récits", color = MaterialTheme.colorScheme.onBackground)
+                Switch(
+                    checked = useGemini,
+                    onCheckedChange = { useGemini = it; PlaybackController.setUseGemini(it) }
+                )
+            }
         }
     }
 }
