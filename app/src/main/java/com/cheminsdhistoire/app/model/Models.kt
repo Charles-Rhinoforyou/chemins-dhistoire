@@ -1,5 +1,7 @@
 package com.cheminsdhistoire.app.model
 
+import com.cheminsdhistoire.app.map.Era
+
 /** Un point géographique simple. */
 data class GeoPoint(val lat: Double, val lon: Double)
 
@@ -48,5 +50,6 @@ data class PlayerUiState(
     val queue: List<HistoryPlace> = emptyList(),
     val message: String? = null,
     val narratorMode: String = "Narrateur local",
-    val autoContinue: Boolean = true
+    val autoContinue: Boolean = true,
+    val eraFilter: Era = Era.TOUTES
 )

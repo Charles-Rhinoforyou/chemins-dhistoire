@@ -26,6 +26,7 @@ class ItineraryPlanner(private val wiki: WikipediaService) {
         origin: GeoPoint,
         destination: GeoPoint,
         destinationName: String,
+        era: Era = Era.TOUTES,
         maxStops: Int = 8,
         corridorHalfWidthMeters: Double = 12_000.0
     ): Itinerary = withContext(Dispatchers.IO) {
@@ -56,6 +57,7 @@ class ItineraryPlanner(private val wiki: WikipediaService) {
         data class Scored(val place: HistoryPlace, val t: Double, val score: Double)
 
         val scored = candidates.values.mapNotNull { p ->
+            if (!EraClassifier.matches(p, era)) return@mapNotNull null
             val (px, py) = toXY(GeoPoint(p.lat, p.lon))
             val t = if (lenSq == 0.0) 0.0 else (px * dx + py * dy) / lenSq
             val perp = hypot(px - t * dx, py - t * dy)

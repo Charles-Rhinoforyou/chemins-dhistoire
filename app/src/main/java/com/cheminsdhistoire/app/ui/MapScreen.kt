@@ -46,10 +46,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.cheminsdhistoire.app.data.WikipediaService
+import com.cheminsdhistoire.app.map.EraClassifier
 import com.cheminsdhistoire.app.map.GeocodingService
 import com.cheminsdhistoire.app.map.Itinerary
 import com.cheminsdhistoire.app.map.ItineraryPlanner
 import com.cheminsdhistoire.app.map.MonumentIcons
+import com.cheminsdhistoire.app.map.RoadRoute
+import com.cheminsdhistoire.app.map.RoutingService
 import com.cheminsdhistoire.app.model.HistoryPlace
 import com.cheminsdhistoire.app.model.PlayerUiState
 import com.cheminsdhistoire.app.narration.NarrationUtils
@@ -71,9 +74,11 @@ fun MapScreen(ui: PlayerUiState) {
     val wiki = remember { WikipediaService() }
     val geocoder = remember { GeocodingService() }
     val planner = remember { ItineraryPlanner(wiki) }
+    val router = remember { RoutingService() }
 
     var destinationText by remember { mutableStateOf("") }
     var itinerary by remember { mutableStateOf<Itinerary?>(null) }
+    var route by remember { mutableStateOf<RoadRoute?>(null) }
     var planning by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     val selected = remember { mutableStateOf<HistoryPlace?>(null) }
@@ -130,11 +135,18 @@ fun MapScreen(ui: PlayerUiState) {
 
         val itin = itinerary
         if (itin != null) {
-            val line = Polyline().apply {
+            val roadPts = route?.points
+            val linePts = if (roadPts != null && roadPts.size >= 2) {
+                roadPts.map { OsmGeoPoint(it.lat, it.lon) }
+            } else {
+                // Repli : ligne droite entre les étapes si le routage a échoué.
                 val pts = mutableListOf(OsmGeoPoint(itin.origin.lat, itin.origin.lon))
                 itin.stops.forEach { pts.add(OsmGeoPoint(it.lat, it.lon)) }
                 pts.add(OsmGeoPoint(itin.destination.lat, itin.destination.lon))
-                setPoints(pts)
+                pts
+            }
+            val line = Polyline().apply {
+                setPoints(linePts)
                 outlinePaint.color = 0xFFB5451B.toInt()
                 outlinePaint.strokeWidth = 9f
             }
@@ -150,17 +162,22 @@ fun MapScreen(ui: PlayerUiState) {
                 )
             )
         } else {
-            // Sans itinéraire : on montre les lieux détectés autour de soi.
+            // Sans itinéraire : on montre les lieux détectés autour de soi, filtrés par époque.
             val nearby = LinkedHashMap<Long, HistoryPlace>()
             ui.currentStory?.place?.let { if (it.pageId >= 0) nearby[it.pageId] = it }
             ui.queue.forEach { nearby[it.pageId] = it }
-            nearby.values.take(30).forEach { mapView.overlays.add(makeMarker(it)) }
+            nearby.values
+                .filter { EraClassifier.matches(it, ui.eraFilter) }
+                .take(30)
+                .forEach { mapView.overlays.add(makeMarker(it)) }
         }
         mapView.invalidate()
     }
 
     // Reconstruit les marqueurs quand les données changent.
-    androidx.compose.runtime.LaunchedEffect(ui.queue, itinerary, ui.currentStory?.title) {
+    androidx.compose.runtime.LaunchedEffect(
+        ui.queue, itinerary, route, ui.eraFilter, ui.currentStory?.title
+    ) {
         rebuildOverlays()
     }
 
@@ -210,6 +227,7 @@ fun MapScreen(ui: PlayerUiState) {
         }
         planning = true
         errorMsg = null
+        route = null
         scope.launch {
             val dest = geocoder.geocode(destinationText)
             if (dest == null) {
@@ -217,9 +235,18 @@ fun MapScreen(ui: PlayerUiState) {
                 planning = false
                 return@launch
             }
-            itinerary = planner.plan(origin, dest.point, dest.name)
-            if (itinerary?.stops.isNullOrEmpty()) {
+            val itin = planner.plan(origin, dest.point, dest.name, era = ui.eraFilter)
+            itinerary = itin
+            if (itin.stops.isEmpty()) {
                 errorMsg = "Peu de lieux remarquables trouvés sur ce trajet."
+            } else {
+                // Trace le vrai parcours routier passant par toutes les étapes.
+                val waypoints = buildList {
+                    add(origin)
+                    itin.stops.forEach { add(com.cheminsdhistoire.app.model.GeoPoint(it.lat, it.lon)) }
+                    add(itin.destination)
+                }
+                route = router.route(waypoints)
             }
             planning = false
         }
@@ -254,13 +281,17 @@ fun MapScreen(ui: PlayerUiState) {
         }
         if (itinerary != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                val r = route
+                val extra = if (r != null)
+                    " · ${formatKm(r.distanceMeters)} · ${formatDuration(r.durationSeconds)}"
+                else ""
                 Text(
-                    "Itinéraire vers ${itinerary!!.destinationName} · ${itinerary!!.stops.size} étapes",
+                    "Vers ${itinerary!!.destinationName} · ${itinerary!!.stops.size} étapes$extra",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = { itinerary = null; centered = false }) {
+                IconButton(onClick = { itinerary = null; route = null; centered = false }) {
                     Icon(Icons.Filled.Close, contentDescription = "Effacer l'itinéraire")
                 }
             }
@@ -326,6 +357,17 @@ fun MapScreen(ui: PlayerUiState) {
             }
         }
     }
+}
+
+private fun formatKm(meters: Double): String =
+    if (meters < 1000) "${meters.toInt()} m"
+    else "${Math.round(meters / 1000.0)} km"
+
+private fun formatDuration(seconds: Double): String {
+    val total = (seconds / 60).toInt()
+    val h = total / 60
+    val m = total % 60
+    return if (h > 0) "${h} h ${m.toString().padStart(2, '0')}" else "${m} min"
 }
 
 @Composable

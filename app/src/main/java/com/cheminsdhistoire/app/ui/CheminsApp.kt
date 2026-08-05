@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +31,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.cheminsdhistoire.app.map.Era
 import com.cheminsdhistoire.app.model.JourneyEntry
 import com.cheminsdhistoire.app.model.PlaybackState
 import com.cheminsdhistoire.app.model.PlayerUiState
@@ -137,6 +140,8 @@ private fun PlayerScreen(
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        EraFilterRow(ui.eraFilter)
 
         StoryCard(ui)
 
@@ -291,6 +296,22 @@ private fun ControlsRow(ui: PlayerUiState, onRequestStart: () -> Unit) {
             Icon(Icons.Filled.Bookmark, contentDescription = null)
             Spacer(Modifier.size(6.dp))
             Text("Garder")
+        }
+    }
+}
+
+@Composable
+private fun EraFilterRow(selected: Era) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Era.values().forEach { era ->
+            FilterChip(
+                selected = era == selected,
+                onClick = { PlaybackController.setEraFilter(era) },
+                label = { Text(era.label) }
+            )
         }
     }
 }

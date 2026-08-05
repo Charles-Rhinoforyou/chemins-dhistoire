@@ -6,6 +6,8 @@ import com.cheminsdhistoire.app.audio.SpeechManager
 import com.cheminsdhistoire.app.data.JourneyStore
 import com.cheminsdhistoire.app.data.WikipediaService
 import com.cheminsdhistoire.app.location.LocationProvider
+import com.cheminsdhistoire.app.map.Era
+import com.cheminsdhistoire.app.map.EraClassifier
 import com.cheminsdhistoire.app.model.GeoPoint
 import com.cheminsdhistoire.app.model.HistoryPlace
 import com.cheminsdhistoire.app.model.JourneyEntry
@@ -160,7 +162,9 @@ object PlaybackController {
         if (s.playbackState == PlaybackState.SPEAKING || s.playbackState == PlaybackState.PAUSED ||
             s.playbackState == PlaybackState.GENERATING
         ) return
-        val next = s.queue.firstOrNull { it.pageId !in seen } ?: return
+        val next = s.queue.firstOrNull {
+            it.pageId !in seen && EraClassifier.matches(it, s.eraFilter)
+        } ?: return
         playPlace(next)
     }
 
@@ -240,6 +244,12 @@ object PlaybackController {
     fun toggleAuto() {
         _state.update { it.copy(autoContinue = !it.autoContinue) }
         if (_state.value.autoContinue) maybePlayNext()
+    }
+
+    /** Filtre par époque : n'affecte que les prochains récits (le récit en cours continue). */
+    fun setEraFilter(era: Era) {
+        _state.update { it.copy(eraFilter = era) }
+        maybePlayNext()
     }
 
     fun saveCurrent() {
