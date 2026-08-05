@@ -26,6 +26,8 @@ Ton vivant, jeune, avec une pointe d'humour dosée. Gratuit, sans compte, sans f
   les lieux d'une période, pour l'écoute comme sur la carte.
 - 🧭 **Navigation 2D façon GPS** : bouton Navigation → la carte suit la position, s'oriente dans le
   sens de la marche, flèche de position, trajectoire et monuments visibles.
+- 🏔️ **Carte 3D (onglet 3D)** : MapLibre GL + tuiles vectorielles **OpenFreeMap** (gratuit, sans clé) —
+  **bâtiments en relief**, caméra inclinée qui suit la position, trajectoire et monuments en 3D.
 - 🤖 **Récits IA Gemini (optionnel, gratuit)** : chacun colle sa **clé Gemini gratuite** (Google AI
   Studio) dans Réglages IA → récits nettement plus riches. Repli auto sur le narrateur local.
 - 🔊 **Voix neurale Gemini (optionnel, gratuit)** : voix beaucoup plus naturelle que celle du
