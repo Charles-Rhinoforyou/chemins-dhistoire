@@ -267,6 +267,7 @@ fun MapScreen(ui: PlayerUiState) {
             }
             val itin = planner.plan(origin, dest.point, dest.name, era = ui.eraFilter)
             itinerary = itin
+            com.cheminsdhistoire.app.map.RouteHolder.set(itin, null)
             if (itin.stops.isEmpty()) {
                 errorMsg = "Peu de lieux remarquables trouvés sur ce trajet."
             } else {
@@ -277,6 +278,7 @@ fun MapScreen(ui: PlayerUiState) {
                     add(itin.destination)
                 }
                 route = router.route(waypoints)
+                com.cheminsdhistoire.app.map.RouteHolder.set(itin, route)
             }
             planning = false
         }
@@ -321,7 +323,10 @@ fun MapScreen(ui: PlayerUiState) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = { itinerary = null; route = null; centered = false }) {
+                IconButton(onClick = {
+                    itinerary = null; route = null; centered = false
+                    com.cheminsdhistoire.app.map.RouteHolder.clear()
+                }) {
                     Icon(Icons.Filled.Close, contentDescription = "Effacer l'itinéraire")
                 }
             }

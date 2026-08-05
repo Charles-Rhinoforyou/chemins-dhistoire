@@ -72,8 +72,11 @@ dependencies {
     // Images d'illustration
     implementation("io.coil-kt:coil-compose:2.6.0")
 
-    // Carte (OpenStreetMap, gratuite, sans clé API)
+    // Carte 2D (OpenStreetMap, gratuite, sans clé API)
     implementation("org.osmdroid:osmdroid-android:6.1.20")
+
+    // Carte 3D (MapLibre GL, tuiles vectorielles OpenFreeMap, gratuit sans clé)
+    implementation("org.maplibre.gl:android-sdk:11.6.1")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Button
@@ -104,6 +105,12 @@ fun CheminsApp(onRequestStart: () -> Unit, onEnterFloating: () -> Unit = {}) {
                     NavigationBarItem(
                         selected = tab == 2,
                         onClick = { tab = 2 },
+                        icon = { Icon(Icons.Filled.ViewInAr, contentDescription = null) },
+                        label = { Text("3D") }
+                    )
+                    NavigationBarItem(
+                        selected = tab == 3,
+                        onClick = { tab = 3 },
                         icon = { Icon(Icons.Filled.Bookmark, contentDescription = null) },
                         label = { Text("Mes récits") }
                     )
@@ -114,6 +121,7 @@ fun CheminsApp(onRequestStart: () -> Unit, onEnterFloating: () -> Unit = {}) {
                 when (tab) {
                     0 -> PlayerScreen(ui, onRequestStart, onEnterFloating)
                     1 -> MapScreen(ui)
+                    2 -> Map3DScreen(ui)
                     else -> SavedScreen(saved)
                 }
             }
