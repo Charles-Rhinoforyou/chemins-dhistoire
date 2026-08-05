@@ -45,6 +45,7 @@ enum class PlaybackState { IDLE, SEARCHING, GENERATING, SPEAKING, PAUSED, ERROR 
 data class PlayerUiState(
     val playbackState: PlaybackState = PlaybackState.IDLE,
     val location: GeoPoint? = null,
+    val heading: Float? = null,
     val currentStory: NarratedStory? = null,
     val currentSegmentIndex: Int = 0,
     val queue: List<HistoryPlace> = emptyList(),

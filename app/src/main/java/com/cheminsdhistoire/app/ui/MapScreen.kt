@@ -18,11 +18,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledIconButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -83,6 +86,7 @@ fun MapScreen(ui: PlayerUiState) {
     var errorMsg by remember { mutableStateOf<String?>(null) }
     val selected = remember { mutableStateOf<HistoryPlace?>(null) }
     var centered by remember { mutableStateOf(false) }
+    var navMode by remember { mutableStateOf(false) }
 
     val mapView = remember {
         Configuration.getInstance().apply {
@@ -131,7 +135,6 @@ fun MapScreen(ui: PlayerUiState) {
 
     fun rebuildOverlays() {
         mapView.overlays.clear()
-        selected.value = null
 
         val itin = itinerary
         if (itin != null) {
@@ -171,14 +174,41 @@ fun MapScreen(ui: PlayerUiState) {
                 .take(30)
                 .forEach { mapView.overlays.add(makeMarker(it)) }
         }
+
+        // Flèche de position (comme un GPS). En navigation, la carte tourne : flèche vers le haut.
+        ui.location?.let { loc ->
+            val me = Marker(mapView).apply {
+                position = OsmGeoPoint(loc.lat, loc.lon)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                icon = ContextCompat.getDrawable(context, com.cheminsdhistoire.app.R.drawable.nav_arrow)
+                rotation = if (navMode) 0f else (ui.heading ?: 0f)
+                setInfoWindow(null)
+                setOnMarkerClickListener { _, _ -> true }
+            }
+            mapView.overlays.add(me)
+        }
         mapView.invalidate()
     }
 
     // Reconstruit les marqueurs quand les données changent.
     androidx.compose.runtime.LaunchedEffect(
-        ui.queue, itinerary, route, ui.eraFilter, ui.currentStory?.title
+        ui.queue, itinerary, route, ui.eraFilter, ui.currentStory?.title,
+        ui.location, ui.heading, navMode
     ) {
         rebuildOverlays()
+    }
+
+    // Mode navigation : la carte suit la position et s'oriente dans le sens de la marche.
+    androidx.compose.runtime.LaunchedEffect(ui.location, ui.heading, navMode) {
+        if (navMode) {
+            ui.location?.let { loc ->
+                mapView.controller.setZoom(17.5)
+                mapView.controller.animateTo(OsmGeoPoint(loc.lat, loc.lon))
+                mapView.mapOrientation = -(ui.heading ?: 0f)
+            }
+        } else {
+            mapView.mapOrientation = 0f
+        }
     }
 
     // Centre sur la position au premier fix GPS.
@@ -305,6 +335,22 @@ fun MapScreen(ui: PlayerUiState) {
                 factory = { mapView },
                 modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp))
             )
+
+            FilledIconButton(
+                onClick = { navMode = !navMode },
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                colors = if (navMode) {
+                    FilledIconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    FilledIconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                }
+            ) {
+                Icon(Icons.Filled.Navigation, contentDescription = "Navigation")
+            }
 
             selected.value?.let { place ->
                 SelectedPlaceCard(

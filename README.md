@@ -24,6 +24,12 @@ Ton vivant, jeune, avec une pointe d'humour dosée. Gratuit, sans compte, sans f
   (OSRM), distance et durée**.
 - ⏳ **Filtre par époque** (Antiquité, Moyen Âge, Renaissance, Moderne, Contemporain) : ne garder que
   les lieux d'une période, pour l'écoute comme sur la carte.
+- 🧭 **Navigation 2D façon GPS** : bouton Navigation → la carte suit la position, s'oriente dans le
+  sens de la marche, flèche de position, trajectoire et monuments visibles.
+- 🤖 **Récits IA Gemini (optionnel, gratuit)** : chacun colle sa **clé Gemini gratuite** (Google AI
+  Studio) dans Réglages IA → récits nettement plus riches. Repli auto sur le narrateur local.
+
+> Obtenir une clé Gemini gratuite : https://aistudio.google.com/app/apikey (bouton « Create API key »).
 
 ## Déployer gratuitement (zéro coût, zéro outil à installer)
 

@@ -127,6 +127,9 @@ object PlaybackController {
         _state.update { it.copy(playbackState = PlaybackState.SEARCHING, message = "Recherche de votre position…") }
         locationJob = scope.launch {
             location.locationUpdates().collect { loc ->
+                if (loc.hasBearing() && loc.speed > 0.5f) {
+                    _state.update { it.copy(heading = loc.bearing) }
+                }
                 onLocation(GeoPoint(loc.latitude, loc.longitude))
             }
         }
