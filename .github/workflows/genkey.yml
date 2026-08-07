@@ -1,8 +1,10 @@
 name: Generate keystore
 
 # Génère une seule fois un keystore de signature STABLE, téléchargeable en artefact.
+# Temporaire : déclenché au push, puis ce fichier est retiré.
 on:
-  workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
   gen:
