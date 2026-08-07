@@ -1,7 +1,5 @@
 package com.cheminsdhistoire.app.ui
 
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,11 +35,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.cheminsdhistoire.app.R
 import com.cheminsdhistoire.app.map.EraClassifier
-import com.cheminsdhistoire.app.map.MonumentIcons
+import com.cheminsdhistoire.app.map.Monument3D
 import com.cheminsdhistoire.app.map.RouteHolder
 import com.cheminsdhistoire.app.model.HistoryPlace
 import com.cheminsdhistoire.app.model.PlayerUiState
@@ -67,8 +63,10 @@ import org.maplibre.geojson.Point
 
 private const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
 private const val SRC_POIS = "pois"
+private const val SRC_MON3D = "monuments3d"
 private const val SRC_ROUTE = "route"
-private const val LAYER_POIS = "poi-symbols"
+private const val LAYER_POIS = "poi-labels"
+private const val LAYER_MON3D = "monuments3d-layer"
 private const val LAYER_ROUTE = "route-line"
 
 @Composable
@@ -102,8 +100,8 @@ fun Map3DScreen(ui: PlayerUiState) {
         mapView.getMapAsync { map ->
             mapRef.value = map
             map.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->
-                registerIcons(context, style)
                 style.addSource(GeoJsonSource(SRC_POIS, FeatureCollection.fromFeatures(emptyList())))
+                style.addSource(GeoJsonSource(SRC_MON3D, FeatureCollection.fromFeatures(emptyList())))
                 style.addSource(GeoJsonSource(SRC_ROUTE, FeatureCollection.fromFeatures(emptyList())))
 
                 style.addLayer(
@@ -114,15 +112,7 @@ fun Map3DScreen(ui: PlayerUiState) {
                         PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
                     )
                 )
-                style.addLayer(
-                    SymbolLayer(LAYER_POIS, SRC_POIS).withProperties(
-                        PropertyFactory.iconImage(Expression.get("icon")),
-                        PropertyFactory.iconSize(0.9f),
-                        PropertyFactory.iconAllowOverlap(true),
-                        PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM)
-                    )
-                )
-                // Bâtiments en relief (schéma OpenMapTiles d'OpenFreeMap).
+                // Bâtiments de ville en relief (schéma OpenMapTiles d'OpenFreeMap).
                 runCatching {
                     style.addLayer(
                         FillExtrusionLayer("buildings-3d", "openmaptiles").apply {
@@ -137,12 +127,34 @@ fun Map3DScreen(ui: PlayerUiState) {
                         }
                     )
                 }
+                // Monuments en 3D « maquette » (volumes extrudés stylisés), au-dessus.
+                style.addLayer(
+                    FillExtrusionLayer(LAYER_MON3D, SRC_MON3D).withProperties(
+                        PropertyFactory.fillExtrusionColor(Expression.get("color")),
+                        PropertyFactory.fillExtrusionHeight(Expression.get("height")),
+                        PropertyFactory.fillExtrusionBase(Expression.get("base")),
+                        PropertyFactory.fillExtrusionOpacity(0.97f)
+                    )
+                )
+                // Étiquettes (noms) au-dessus des volumes.
+                style.addLayer(
+                    SymbolLayer(LAYER_POIS, SRC_POIS).withProperties(
+                        PropertyFactory.textField(Expression.get("title")),
+                        PropertyFactory.textSize(11f),
+                        PropertyFactory.textColor(AndroidColor.parseColor("#2E241A")),
+                        PropertyFactory.textHaloColor(AndroidColor.parseColor("#F2E9D8")),
+                        PropertyFactory.textHaloWidth(1.4f),
+                        PropertyFactory.textAllowOverlap(false),
+                        PropertyFactory.textOptional(true),
+                        PropertyFactory.textAnchor(Property.TEXT_ANCHOR_TOP)
+                    )
+                )
 
                 styleRef.value = style
 
                 map.addOnMapClickListener { latLng ->
                     val pt = map.projection.toScreenLocation(latLng)
-                    val feats = map.queryRenderedFeatures(pt, LAYER_POIS)
+                    val feats = map.queryRenderedFeatures(pt, LAYER_MON3D, LAYER_POIS)
                     val title = feats.firstOrNull()?.getStringProperty("title")
                     val place = title?.let { poiByTitle[it] }
                     if (place != null) {
@@ -162,7 +174,7 @@ fun Map3DScreen(ui: PlayerUiState) {
         }
     }
 
-    // Met à jour les monuments (filtrés par époque).
+    // Met à jour les monuments (maquettes 3D + étiquettes), filtrés par époque.
     LaunchedEffect(ui.queue, ui.eraFilter, ui.currentStory?.title, styleRef.value, itinerary) {
         val style = styleRef.value ?: return@LaunchedEffect
         poiByTitle.clear()
@@ -170,17 +182,22 @@ fun Map3DScreen(ui: PlayerUiState) {
         ui.currentStory?.place?.let { if (it.pageId >= 0) places[it.pageId] = it }
         ui.queue.forEach { places[it.pageId] = it }
         itinerary?.stops?.forEach { places[it.pageId] = it }
-        val feats = places.values
+        val visible = places.values
             .filter { EraClassifier.matches(it, ui.eraFilter) }
             .take(40)
-            .map { p ->
-                poiByTitle[p.title] = p
-                Feature.fromGeometry(Point.fromLngLat(p.lon, p.lat)).apply {
-                    addStringProperty("icon", MonumentIcons.iconFor(p.title).toString())
-                    addStringProperty("title", p.title)
-                }
+        visible.forEach { poiByTitle[it.title] = it }
+
+        val labelFeats = visible.map { p ->
+            Feature.fromGeometry(Point.fromLngLat(p.lon, p.lat)).apply {
+                addStringProperty("title", p.title)
             }
-        (style.getSource(SRC_POIS) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(feats))
+        }
+        (style.getSource(SRC_POIS) as? GeoJsonSource)
+            ?.setGeoJson(FeatureCollection.fromFeatures(labelFeats))
+
+        val volumeFeats = Monument3D.build(visible.toList())
+        (style.getSource(SRC_MON3D) as? GeoJsonSource)
+            ?.setGeoJson(FeatureCollection.fromFeatures(volumeFeats))
     }
 
     // Met à jour la trajectoire.
@@ -268,27 +285,4 @@ fun Map3DScreen(ui: PlayerUiState) {
             }
         }
     }
-}
-
-private fun registerIcons(context: android.content.Context, style: Style) {
-    val icons = listOf(
-        R.drawable.mon_castle, R.drawable.mon_church, R.drawable.mon_tower,
-        R.drawable.mon_statue, R.drawable.mon_ruin, R.drawable.mon_default,
-        R.drawable.mon_bridge, R.drawable.mon_lighthouse, R.drawable.mon_windmill,
-        R.drawable.mon_arena, R.drawable.mon_megalith
-    )
-    icons.forEach { resId ->
-        drawableToBitmap(context, resId)?.let { style.addImage(resId.toString(), it) }
-    }
-}
-
-private fun drawableToBitmap(context: android.content.Context, resId: Int): Bitmap? {
-    val d = ContextCompat.getDrawable(context, resId) ?: return null
-    val w = if (d.intrinsicWidth > 0) d.intrinsicWidth else 96
-    val h = if (d.intrinsicHeight > 0) d.intrinsicHeight else 96
-    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bmp)
-    d.setBounds(0, 0, w, h)
-    d.draw(canvas)
-    return bmp
 }
