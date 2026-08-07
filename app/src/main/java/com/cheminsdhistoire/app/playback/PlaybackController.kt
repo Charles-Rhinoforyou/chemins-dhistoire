@@ -6,6 +6,7 @@ import com.cheminsdhistoire.app.audio.GeminiVoice
 import com.cheminsdhistoire.app.audio.SpeechManager
 import com.cheminsdhistoire.app.audio.VoiceEngine
 import com.cheminsdhistoire.app.data.JourneyStore
+import com.cheminsdhistoire.app.data.PlacesRepository
 import com.cheminsdhistoire.app.data.SettingsStore
 import com.cheminsdhistoire.app.data.WikipediaService
 import com.cheminsdhistoire.app.narration.GeminiNarrator
@@ -51,6 +52,7 @@ object PlaybackController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private lateinit var wiki: WikipediaService
+    private lateinit var places: PlacesRepository
     private lateinit var store: JourneyStore
     private lateinit var location: LocationProvider
     private lateinit var speech: SpeechManager
@@ -68,6 +70,10 @@ object PlaybackController {
     @Volatile private var busy = false
     private var initialized = false
 
+    // Préchargement du prochain récit (texte + voix) pour enchaîner sans silence.
+    @Volatile private var preloadedStory: NarratedStory? = null
+    @Volatile private var preloadedPageId: Long = 0L
+
     private var locationJob: Job? = null
 
     private val _state = MutableStateFlow(PlayerUiState())
@@ -80,24 +86,46 @@ object PlaybackController {
         if (initialized) return
         val app = context.applicationContext
         wiki = WikipediaService()
+        places = PlacesRepository(wiki)
         store = JourneyStore(app)
         location = LocationProvider(app)
         settings = SettingsStore(app)
         templateNarrator = TemplateNarrator()
         llmNarrator = LlmNarrator(app)
-        geminiNarrator = GeminiNarrator(settings)
+        geminiNarrator = GeminiNarrator(settings, onProgress = ::onLoadProgress)
         engine = templateNarrator
         speech = SpeechManager(
             context = app,
             onReady = { ok -> if (!ok) setMessage("Synthèse vocale indisponible sur cet appareil.") },
-            onSegment = { idx -> _state.update { it.copy(currentSegmentIndex = idx) } },
+            onSegment = { idx ->
+                _state.update { s ->
+                    s.copy(
+                        currentSegmentIndex = idx,
+                        playbackState = if (s.playbackState == PlaybackState.GENERATING)
+                            PlaybackState.SPEAKING else s.playbackState,
+                        loadingProgress = null,
+                        message = null
+                    )
+                }
+            },
             onFinished = { onStoryFinished() }
         )
         geminiVoice = GeminiVoice(
             settings = settings,
             fallback = speech,
-            onSegment = { idx -> _state.update { it.copy(currentSegmentIndex = idx) } },
-            onFinished = { onStoryFinished() }
+            onSegment = { idx ->
+                _state.update { s ->
+                    s.copy(
+                        currentSegmentIndex = idx,
+                        playbackState = if (s.playbackState == PlaybackState.GENERATING)
+                            PlaybackState.SPEAKING else s.playbackState,
+                        loadingProgress = null,
+                        message = null
+                    )
+                }
+            },
+            onFinished = { onStoryFinished() },
+            onProgress = ::onLoadProgress
         )
         voice = speech
         initialized = true
@@ -128,7 +156,13 @@ object PlaybackController {
 
     fun setGeminiKey(key: String) {
         settings.geminiKey = key
+        // Dès qu'une clé est enregistrée : Gemini par défaut pour le récit ET la voix.
+        if (key.isNotBlank()) {
+            settings.useGemini = true
+            settings.useGeminiVoice = true
+        }
         applyEngineChoice()
+        applyVoiceChoice()
     }
 
     fun hasGeminiKey(): Boolean = settings.geminiKey.isNotBlank()
@@ -193,7 +227,7 @@ object PlaybackController {
         fetching = true
         scope.launch {
             try {
-                val found = wiki.nearbyPlaces(point.lat, point.lon, SEARCH_RADIUS_M, 20)
+                val found = places.nearby(point.lat, point.lon, SEARCH_RADIUS_M, 20)
                 lastFetchPoint = point
                 val existing = _state.value.queue.associateBy { it.pageId }.toMutableMap()
                 found.forEach { p ->
@@ -233,29 +267,55 @@ object PlaybackController {
         _state.update {
             it.copy(
                 playbackState = PlaybackState.GENERATING,
-                message = "Écriture du récit : ${place.title}…",
+                message = "Préparation : ${place.title}…",
+                loadingProgress = null,
                 queue = it.queue.filterNot { q -> q.pageId == place.pageId }
             )
         }
         scope.launch {
             try {
-                val story = (engine ?: templateNarrator).narrate(place)
-                _state.update {
-                    it.copy(
-                        currentStory = story,
-                        currentSegmentIndex = 0,
-                        playbackState = PlaybackState.SPEAKING,
-                        message = null
-                    )
+                // Récit déjà préchargé ? On l'utilise directement (pas de délai).
+                val story = if (preloadedStory != null && preloadedPageId == place.pageId) {
+                    preloadedStory!!
+                } else {
+                    (engine ?: templateNarrator).narrate(place)
                 }
+                preloadedStory = null
+                preloadedPageId = 0L
+                // On reste en GENERATING : le passage en SPEAKING se fait quand l'audio démarre.
+                _state.update { it.copy(currentStory = story, currentSegmentIndex = 0) }
                 voice.speakStory(story)
+                preloadNext()
             } catch (e: Exception) {
                 Log.w(TAG, "Échec de narration : ${e.message}")
-                _state.update { it.copy(playbackState = PlaybackState.IDLE) }
+                _state.update { it.copy(playbackState = PlaybackState.IDLE, loadingProgress = null) }
             } finally {
                 busy = false
             }
         }
+    }
+
+    /** Prépare à l'avance le prochain récit (texte + voix) pendant la lecture en cours. */
+    private fun preloadNext() {
+        val s = _state.value
+        val next = s.queue.firstOrNull {
+            it.pageId !in seen && EraClassifier.matches(it, s.eraFilter)
+        } ?: return
+        if (preloadedPageId == next.pageId && preloadedStory != null) return
+        scope.launch {
+            runCatching {
+                val story = (engine ?: templateNarrator).narrate(next)
+                voice.prepare(story)
+                preloadedStory = story
+                preloadedPageId = next.pageId
+            }
+        }
+    }
+
+    /** Progression de chargement (récit/voix). Ignorée pendant la lecture (préchargement en fond). */
+    private fun onLoadProgress(label: String, fraction: Float) {
+        if (_state.value.playbackState == PlaybackState.SPEAKING) return
+        _state.update { it.copy(message = "$label…", loadingProgress = fraction.coerceIn(0f, 1f)) }
     }
 
     private fun onStoryFinished() {

@@ -52,5 +52,7 @@ data class PlayerUiState(
     val message: String? = null,
     val narratorMode: String = "Narrateur local",
     val autoContinue: Boolean = true,
-    val eraFilter: Era = Era.TOUTES
+    val eraFilter: Era = Era.TOUTES,
+    /** Progression du chargement (récit/voix) en 0..1, ou null si indéterminé/inactif. */
+    val loadingProgress: Float? = null
 )

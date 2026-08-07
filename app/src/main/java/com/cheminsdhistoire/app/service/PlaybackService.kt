@@ -53,12 +53,23 @@ class PlaybackService : LifecycleService() {
             return START_NOT_STICKY
         }
         PlaybackController.start()
-        return START_STICKY
+        // START_NOT_STICKY : si le système tue le service (ou l'app est fermée),
+        // il ne le redémarre pas tout seul → plus de lecture qui repart sans l'utilisateur.
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent): IBinder? {
         super.onBind(intent)
         return null
+    }
+
+    /** L'utilisateur a fermé l'application (balayée depuis les récents) → on arrête tout. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        PlaybackController.stopEngine()
+        com.cheminsdhistoire.app.overlay.FloatingPlayerManager.hide()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
     }
 
     private fun buildNotification(text: String): Notification {

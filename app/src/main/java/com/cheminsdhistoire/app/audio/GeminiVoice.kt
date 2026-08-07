@@ -20,6 +20,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import kotlin.math.min
@@ -27,23 +28,26 @@ import kotlin.math.min
 /**
  * Voix neurale via l'API Gemini TTS (clé gratuite de l'utilisateur). Récupère de
  * l'audio PCM 16 bits / 24 kHz et le joue avec [AudioTrack], segment par segment.
- * En cas d'absence de clé ou d'échec → repli automatique sur la voix du téléphone.
+ * Reporte la progression du téléchargement (%). Peut pré-synthétiser à l'avance
+ * ([prepare]) pour enchaîner sans silence. Repli auto sur la voix du téléphone.
  */
 class GeminiVoice(
     private val settings: SettingsStore,
     private val fallback: SpeechManager,
     private val onSegment: (Int) -> Unit,
-    private val onFinished: () -> Unit
+    private val onFinished: () -> Unit,
+    private val onProgress: (String, Float) -> Unit = { _, _ -> }
 ) : VoiceEngine {
 
     override val isReady: Boolean get() = true
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
+    private var prepareJob: Job? = null
     private var track: AudioTrack? = null
 
-    private var cachedStory: NarratedStory? = null
-    private var cachedPcm: ByteArray? = null
+    @Volatile private var cachedStory: NarratedStory? = null
+    @Volatile private var cachedPcm: ByteArray? = null
     private var segmentOffsets: IntArray = IntArray(0)
 
     private val client = OkHttpClient.Builder()
@@ -58,12 +62,11 @@ class GeminiVoice(
                 cachedPcm!!
             } else {
                 val fresh = try {
-                    synthesize(story)
+                    synthesize(story) { f -> onProgress("Chargement de la voix", f) }
                 } catch (e: Exception) {
                     Log.w(TAG, "Synthèse Gemini échouée: ${e.message}"); null
                 }
                 if (fresh == null) {
-                    // Repli sur la voix du téléphone (sur le thread principal).
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
                         fallback.speakStory(story, fromSegment)
                     }
@@ -75,6 +78,18 @@ class GeminiVoice(
             }
             computeOffsets(story, pcm.size)
             play(pcm, fromSegment)
+        }
+    }
+
+    /** Pré-synthétise un récit en fond (sans progression visible) pour éviter les silences. */
+    override fun prepare(story: NarratedStory) {
+        if (settings.geminiKey.isBlank()) return
+        if (story === cachedStory && cachedPcm != null) return
+        prepareJob?.cancel()
+        prepareJob = scope.launch {
+            val pcm = runCatching { synthesize(story) { } }.getOrNull() ?: return@launch
+            cachedStory = story
+            cachedPcm = pcm
         }
     }
 
@@ -140,7 +155,7 @@ class GeminiVoice(
         segmentOffsets = offs
     }
 
-    private fun synthesize(story: NarratedStory): ByteArray? {
+    private fun synthesize(story: NarratedStory, onFrac: (Float) -> Unit): ByteArray? {
         val key = settings.geminiKey
         if (key.isBlank()) return null
         val text = "Raconte ce récit d'Histoire avec enthousiasme, chaleur et vivacité :\n\n" +
@@ -164,13 +179,27 @@ class GeminiVoice(
             "$TTS_MODEL:generateContent?key=$key"
         val req = Request.Builder()
             .url(url)
+            .header("Accept-Encoding", "identity") // pour obtenir un Content-Length et un vrai %
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) return null
-            val body = resp.body?.string() ?: return null
-            val parts = JSONObject(body).optJSONArray("candidates")
+            val body = resp.body ?: return null
+            val total = body.contentLength()
+            val stream = body.byteStream()
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(16384)
+            var read = 0L
+            while (true) {
+                val n = stream.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+                read += n
+                if (total > 0) onFrac((read.toFloat() / total).coerceIn(0f, 1f))
+            }
+            val jsonText = out.toString("UTF-8")
+            val parts = JSONObject(jsonText).optJSONArray("candidates")
                 ?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
                 ?: return null
             val b64 = StringBuilder()
@@ -197,6 +226,7 @@ class GeminiVoice(
     }
 
     override fun shutdown() {
+        prepareJob?.cancel()
         stop()
     }
 

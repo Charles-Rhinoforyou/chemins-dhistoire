@@ -20,7 +20,8 @@ import java.util.concurrent.TimeUnit
  */
 class GeminiNarrator(
     private val settings: SettingsStore,
-    private val fallback: TemplateNarrator = TemplateNarrator()
+    private val fallback: TemplateNarrator = TemplateNarrator(),
+    private val onProgress: (String, Float) -> Unit = { _, _ -> }
 ) : NarrationEngine {
 
     override val label = "IA Gemini (clé perso)"
@@ -81,12 +82,26 @@ class GeminiNarrator(
         val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$key"
         val req = Request.Builder()
             .url(url)
+            .header("Accept-Encoding", "identity")
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) return null
-            val body = resp.body?.string() ?: return null
+            val respBody = resp.body ?: return null
+            val total = respBody.contentLength()
+            val stream = respBody.byteStream()
+            val out = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(8192)
+            var readSum = 0L
+            while (true) {
+                val n = stream.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+                readSum += n
+                if (total > 0) onProgress("Écriture du récit", (readSum.toFloat() / total).coerceIn(0f, 1f))
+            }
+            val body = out.toString("UTF-8")
             val candidates = JSONObject(body).optJSONArray("candidates") ?: return null
             if (candidates.length() == 0) return null
             val parts = candidates.getJSONObject(0)

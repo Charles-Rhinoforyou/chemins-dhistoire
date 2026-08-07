@@ -11,12 +11,31 @@ android {
         applicationId = "com.cheminsdhistoire.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 7
+        versionName = "0.7.0"
         vectorDrawables { useSupportLibrary = true }
     }
 
+    // Clé de signature STABLE (committée) : permet d'installer les mises à jour
+    // par-dessus l'app existante sans désinstaller → les réglages (clé Gemini) persistent.
+    val stableKeystore = file("signing/chemins.jks")
+    signingConfigs {
+        if (stableKeystore.exists()) {
+            create("stable") {
+                storeFile = stableKeystore
+                storePassword = "cheminsdhistoire"
+                keyAlias = "chemins"
+                keyPassword = "cheminsdhistoire"
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (stableKeystore.exists()) {
+                signingConfig = signingConfigs.getByName("stable")
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(

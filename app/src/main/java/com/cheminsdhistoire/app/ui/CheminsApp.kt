@@ -238,22 +238,43 @@ private fun StoryCard(ui: PlayerUiState) {
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
-                val total = story.segments.size.coerceAtLeast(1)
-                val idx = ui.currentSegmentIndex.coerceIn(0, total - 1)
-                LinearProgressIndicator(
-                    progress = (idx + 1).toFloat() / total,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    story.segments.getOrNull(idx) ?: story.script.take(140),
-                    fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    "Segment ${idx + 1} / $total",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (ui.playbackState == PlaybackState.GENERATING) {
+                    // Chargement du récit / de la voix, avec pourcentage.
+                    val p = ui.loadingProgress
+                    if (p != null) {
+                        LinearProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth())
+                        Text(
+                            "${ui.message ?: "Chargement"} ${(p * 100).toInt()} %",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text(
+                            ui.message ?: "Préparation…",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                } else {
+                    val total = story.segments.size.coerceAtLeast(1)
+                    val idx = ui.currentSegmentIndex.coerceIn(0, total - 1)
+                    val pct = ((idx + 1) * 100) / total
+                    LinearProgressIndicator(
+                        progress = (idx + 1).toFloat() / total,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        story.segments.getOrNull(idx) ?: story.script.take(140),
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        "Segment ${idx + 1} / $total · $pct %",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (ui.playbackState == PlaybackState.SEARCHING ||
@@ -270,6 +291,15 @@ private fun StoryCard(ui: PlayerUiState) {
                         ui.message ?: "Mettez-vous en route : dès qu'un lieu chargé d'Histoire "
                             + "approche, le récit démarre tout seul.",
                         color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                val p = ui.loadingProgress
+                if (p != null) {
+                    LinearProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth())
+                    Text(
+                        "${(p * 100).toInt()} %",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.secondary
                     )
                 }
             }
@@ -358,7 +388,14 @@ private fun AiSettingsCard() {
                 modifier = Modifier.fillMaxWidth()
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = { PlaybackController.setGeminiKey(key); saved = true }) {
+                Button(onClick = {
+                    PlaybackController.setGeminiKey(key)
+                    saved = true
+                    if (key.isNotBlank()) {
+                        useGemini = true
+                        useVoice = true
+                    }
+                }) {
                     Text("Enregistrer")
                 }
                 Spacer(Modifier.size(10.dp))
