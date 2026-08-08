@@ -25,6 +25,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import com.cheminsdhistoire.app.data.PlacesRepository
 import com.cheminsdhistoire.app.data.WikipediaService
 import com.cheminsdhistoire.app.map.EraClassifier
 import com.cheminsdhistoire.app.map.GeocodingService
@@ -87,6 +89,12 @@ fun MapScreen(ui: PlayerUiState) {
     val selected = remember { mutableStateOf<HistoryPlace?>(null) }
     var centered by remember { mutableStateOf(false) }
     var navMode by remember { mutableStateOf(false) }
+
+    // Mode de recherche : false = Itinéraire (étapes en route), true = Destination (tous les sujets du lieu).
+    var destinationMode by remember { mutableStateOf(false) }
+    var destPlaces by remember { mutableStateOf<List<HistoryPlace>?>(null) }
+    var destName by remember { mutableStateOf("") }
+    val repo = remember { PlacesRepository() }
 
     val mapView = remember {
         Configuration.getInstance().apply {
@@ -164,6 +172,11 @@ fun MapScreen(ui: PlayerUiState) {
                     isDestination = true
                 )
             )
+        } else if (destPlaces != null) {
+            // Mode Destination : tous les sujets du lieu recherché.
+            destPlaces!!.filter { EraClassifier.matches(it, ui.eraFilter) }
+                .take(40)
+                .forEach { mapView.overlays.add(makeMarker(it)) }
         } else {
             // Sans itinéraire : on montre les lieux détectés autour de soi, filtrés par époque.
             val nearby = LinkedHashMap<Long, HistoryPlace>()
@@ -192,7 +205,7 @@ fun MapScreen(ui: PlayerUiState) {
 
     // Reconstruit les marqueurs quand les données changent.
     androidx.compose.runtime.LaunchedEffect(
-        ui.queue, itinerary, route, ui.eraFilter, ui.currentStory?.title,
+        ui.queue, itinerary, route, destPlaces, ui.eraFilter, ui.currentStory?.title,
         ui.location, ui.heading, navMode
     ) {
         rebuildOverlays()
@@ -246,18 +259,48 @@ fun MapScreen(ui: PlayerUiState) {
     }
 
     fun launchPlan() {
+        if (destinationText.isBlank()) {
+            errorMsg = "Entrez une destination."
+            return
+        }
+        if (destinationMode) {
+            // MODE DESTINATION : tous les sujets de podcast du lieu recherché.
+            planning = true
+            errorMsg = null
+            itinerary = null
+            route = null
+            com.cheminsdhistoire.app.map.RouteHolder.clear()
+            scope.launch {
+                val dest = geocoder.geocode(destinationText)
+                if (dest == null) {
+                    errorMsg = "Destination introuvable."
+                    planning = false
+                    return@launch
+                }
+                // repo.nearby calcule la distance par rapport à la destination -> déjà trié.
+                val found = repo.nearby(dest.point.lat, dest.point.lon, 6_000, 30)
+                    .filter { EraClassifier.matches(it, ui.eraFilter) }
+                destPlaces = found
+                destName = dest.name
+                if (found.isEmpty()) errorMsg = "Aucun sujet trouvé à cette destination."
+                centered = true
+                mapView.controller.setZoom(14.0)
+                mapView.controller.animateTo(OsmGeoPoint(dest.point.lat, dest.point.lon))
+                planning = false
+            }
+            return
+        }
+
+        // MODE ITINÉRAIRE : étapes remarquables le long de la route.
         val origin = ui.location
         if (origin == null) {
             errorMsg = "Position GPS non disponible : lancez l'écoute d'abord (onglet Écoute)."
             return
         }
-        if (destinationText.isBlank()) {
-            errorMsg = "Entrez une destination."
-            return
-        }
         planning = true
         errorMsg = null
         route = null
+        destPlaces = null
         scope.launch {
             val dest = geocoder.geocode(destinationText)
             if (dest == null) {
@@ -291,6 +334,26 @@ fun MapScreen(ui: PlayerUiState) {
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = !destinationMode,
+                onClick = {
+                    destinationMode = false
+                    destPlaces = null; itinerary = null; route = null; errorMsg = null
+                    com.cheminsdhistoire.app.map.RouteHolder.clear()
+                },
+                label = { Text("Itinéraire") }
+            )
+            FilterChip(
+                selected = destinationMode,
+                onClick = {
+                    destinationMode = true
+                    destPlaces = null; itinerary = null; route = null; errorMsg = null
+                    com.cheminsdhistoire.app.map.RouteHolder.clear()
+                },
+                label = { Text("Destination") }
+            )
+        }
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -299,7 +362,12 @@ fun MapScreen(ui: PlayerUiState) {
             OutlinedTextField(
                 value = destinationText,
                 onValueChange = { destinationText = it },
-                placeholder = { Text("Destination (ville, lieu…)") },
+                placeholder = {
+                    Text(
+                        if (destinationMode) "Lieu à explorer (ville, site…)"
+                        else "Destination (ville, lieu…)"
+                    )
+                },
                 singleLine = true,
                 modifier = Modifier.weight(1f)
             )
@@ -328,6 +396,19 @@ fun MapScreen(ui: PlayerUiState) {
                     com.cheminsdhistoire.app.map.RouteHolder.clear()
                 }) {
                     Icon(Icons.Filled.Close, contentDescription = "Effacer l'itinéraire")
+                }
+            }
+        }
+        if (destPlaces != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "À $destName · ${destPlaces!!.size} sujets",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { destPlaces = null; errorMsg = null }) {
+                    Icon(Icons.Filled.Close, contentDescription = "Effacer")
                 }
             }
         }
@@ -377,6 +458,45 @@ fun MapScreen(ui: PlayerUiState) {
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     itin.stops.forEachIndexed { i, p ->
+                        Card(
+                            Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            )
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "${i + 1}. ${p.title}",
+                                    Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                IconButton(onClick = { PlaybackController.playNow(p) }) {
+                                    Icon(
+                                        Icons.Filled.Headphones,
+                                        contentDescription = "Écouter",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        destPlaces?.let { list ->
+            if (list.isNotEmpty()) {
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = 160.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    list.forEachIndexed { i, p ->
                         Card(
                             Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(
