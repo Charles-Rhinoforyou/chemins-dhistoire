@@ -54,7 +54,7 @@ class ItineraryPlanner(private val wiki: WikipediaService) {
             }
         }
 
-        data class Scored(val place: HistoryPlace, val t: Double, val score: Double)
+        data class Scored(val place: HistoryPlace, val t: Double, val score: Double, val distToDest: Double)
 
         val scored = candidates.values.mapNotNull { p ->
             if (!EraClassifier.matches(p, era)) return@mapNotNull null
@@ -64,13 +64,23 @@ class ItineraryPlanner(private val wiki: WikipediaService) {
             if (t < -0.1 || t > 1.1 || perp > corridorHalfWidthMeters) return@mapNotNull null
             val interest = (if (p.thumbnailUrl != null) 2.0 else 0.0) +
                 (p.extract.length / 150.0).coerceAtMost(5.0)
-            Scored(p, t.coerceIn(0.0, 1.0), interest)
+            val distToDest = hypot(px - dx, py - dy)
+            Scored(p, t.coerceIn(0.0, 1.0), interest, distToDest)
         }
 
-        val best = scored.sortedByDescending { it.score }
-            .take(maxStops)
-            .sortedBy { it.t }
-            .map { it.place }
+        val best = if (scored.isEmpty()) {
+            emptyList()
+        } else {
+            // La DERNIÈRE étape est le lieu le plus proche de la destination.
+            val finalStop = scored.minByOrNull { it.distToDest }!!
+            // Les étapes intermédiaires (avant lui) sont choisies par intérêt, ordonnées le long de la route.
+            val middle = scored
+                .filter { it !== finalStop && it.t < finalStop.t }
+                .sortedByDescending { it.score }
+                .take((maxStops - 1).coerceAtLeast(0))
+                .sortedBy { it.t }
+            middle.map { it.place } + finalStop.place
+        }
 
         Itinerary(origin, destination, destinationName, best)
     }
