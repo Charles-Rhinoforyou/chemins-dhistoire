@@ -62,6 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.cheminsdhistoire.app.data.SettingsStore
 import com.cheminsdhistoire.app.map.Era
+import com.cheminsdhistoire.app.map.Theme
 import com.cheminsdhistoire.app.model.JourneyEntry
 import com.cheminsdhistoire.app.model.PlaybackState
 import com.cheminsdhistoire.app.model.PlayerUiState
@@ -153,6 +154,7 @@ private fun PlayerScreen(
         )
 
         EraFilterRow(ui.eraFilter)
+        ThemeFilterRow(ui.themeFilter)
 
         StoryCard(ui)
 
@@ -432,7 +434,26 @@ private fun AiSettingsCard() {
 }
 
 @Composable
-private fun EraFilterRow(selected: Era) {
+internal fun ThemeFilterRow(selected: Set<Theme>) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Theme.entries.forEach { th ->
+            FilterChip(
+                selected = th in selected,
+                onClick = {
+                    val newSet = if (th in selected) selected - th else selected + th
+                    PlaybackController.setThemeFilter(newSet)
+                },
+                label = { Text(th.label) }
+            )
+        }
+    }
+}
+
+@Composable
+internal fun EraFilterRow(selected: Era) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp)

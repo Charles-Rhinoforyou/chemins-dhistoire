@@ -53,6 +53,8 @@ import com.cheminsdhistoire.app.data.PlacesRepository
 import com.cheminsdhistoire.app.data.WikipediaService
 import com.cheminsdhistoire.app.map.EraClassifier
 import com.cheminsdhistoire.app.map.GeocodingService
+import com.cheminsdhistoire.app.map.Theme
+import com.cheminsdhistoire.app.map.ThemeClassifier
 import com.cheminsdhistoire.app.map.Itinerary
 import com.cheminsdhistoire.app.map.ItineraryPlanner
 import com.cheminsdhistoire.app.map.MonumentIcons
@@ -174,16 +176,17 @@ fun MapScreen(ui: PlayerUiState) {
             )
         } else if (destPlaces != null) {
             // Mode Destination : tous les sujets du lieu recherché.
-            destPlaces!!.filter { EraClassifier.matches(it, ui.eraFilter) }
+            destPlaces!!
+                .filter { EraClassifier.matches(it, ui.eraFilter) && ThemeClassifier.matches(it, ui.themeFilter) }
                 .take(40)
                 .forEach { mapView.overlays.add(makeMarker(it)) }
         } else {
-            // Sans itinéraire : on montre les lieux détectés autour de soi, filtrés par époque.
+            // Sans itinéraire : on montre les lieux détectés autour de soi, filtrés par époque et thème.
             val nearby = LinkedHashMap<Long, HistoryPlace>()
             ui.currentStory?.place?.let { if (it.pageId >= 0) nearby[it.pageId] = it }
             ui.queue.forEach { nearby[it.pageId] = it }
             nearby.values
-                .filter { EraClassifier.matches(it, ui.eraFilter) }
+                .filter { EraClassifier.matches(it, ui.eraFilter) && ThemeClassifier.matches(it, ui.themeFilter) }
                 .take(30)
                 .forEach { mapView.overlays.add(makeMarker(it)) }
         }
@@ -205,7 +208,7 @@ fun MapScreen(ui: PlayerUiState) {
 
     // Reconstruit les marqueurs quand les données changent.
     androidx.compose.runtime.LaunchedEffect(
-        ui.queue, itinerary, route, destPlaces, ui.eraFilter, ui.currentStory?.title,
+        ui.queue, itinerary, route, destPlaces, ui.eraFilter, ui.themeFilter, ui.currentStory?.title,
         ui.location, ui.heading, navMode
     ) {
         rebuildOverlays()
@@ -279,7 +282,7 @@ fun MapScreen(ui: PlayerUiState) {
                 }
                 // repo.nearby calcule la distance par rapport à la destination -> déjà trié.
                 val found = repo.nearby(dest.point.lat, dest.point.lon, 6_000, 30)
-                    .filter { EraClassifier.matches(it, ui.eraFilter) }
+                    .filter { EraClassifier.matches(it, ui.eraFilter) && ThemeClassifier.matches(it, ui.themeFilter) }
                 destPlaces = found
                 destName = dest.name
                 if (found.isEmpty()) errorMsg = "Aucun sujet trouvé à cette destination."
@@ -308,7 +311,7 @@ fun MapScreen(ui: PlayerUiState) {
                 planning = false
                 return@launch
             }
-            val itin = planner.plan(origin, dest.point, dest.name, era = ui.eraFilter)
+            val itin = planner.plan(origin, dest.point, dest.name, era = ui.eraFilter, themes = ui.themeFilter)
             itinerary = itin
             com.cheminsdhistoire.app.map.RouteHolder.set(itin, null)
             if (itin.stops.isEmpty()) {
@@ -354,6 +357,9 @@ fun MapScreen(ui: PlayerUiState) {
                 label = { Text("Destination") }
             )
         }
+        // Filtres (avant/après recherche) : époque + thématiques.
+        EraFilterRow(ui.eraFilter)
+        ThemeFilterRow(ui.themeFilter)
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),

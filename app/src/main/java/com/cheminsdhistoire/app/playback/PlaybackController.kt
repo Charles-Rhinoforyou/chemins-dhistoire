@@ -13,6 +13,8 @@ import com.cheminsdhistoire.app.narration.GeminiNarrator
 import com.cheminsdhistoire.app.location.LocationProvider
 import com.cheminsdhistoire.app.map.Era
 import com.cheminsdhistoire.app.map.EraClassifier
+import com.cheminsdhistoire.app.map.Theme
+import com.cheminsdhistoire.app.map.ThemeClassifier
 import com.cheminsdhistoire.app.model.GeoPoint
 import com.cheminsdhistoire.app.model.HistoryPlace
 import com.cheminsdhistoire.app.model.JourneyEntry
@@ -255,7 +257,8 @@ object PlaybackController {
             s.playbackState == PlaybackState.GENERATING
         ) return
         val next = s.queue.firstOrNull {
-            it.pageId !in seen && EraClassifier.matches(it, s.eraFilter)
+            it.pageId !in seen && EraClassifier.matches(it, s.eraFilter) &&
+                ThemeClassifier.matches(it, s.themeFilter)
         } ?: return
         playPlace(next)
     }
@@ -299,7 +302,8 @@ object PlaybackController {
     private fun preloadNext() {
         val s = _state.value
         val next = s.queue.firstOrNull {
-            it.pageId !in seen && EraClassifier.matches(it, s.eraFilter)
+            it.pageId !in seen && EraClassifier.matches(it, s.eraFilter) &&
+                ThemeClassifier.matches(it, s.themeFilter)
         } ?: return
         if (preloadedPageId == next.pageId && preloadedStory != null) return
         scope.launch {
@@ -367,6 +371,12 @@ object PlaybackController {
     /** Filtre par époque : n'affecte que les prochains récits (le récit en cours continue). */
     fun setEraFilter(era: Era) {
         _state.update { it.copy(eraFilter = era) }
+        maybePlayNext()
+    }
+
+    /** Filtre par thématiques (ensemble ; vide = tous). N'affecte que les prochains récits. */
+    fun setThemeFilter(themes: Set<Theme>) {
+        _state.update { it.copy(themeFilter = themes) }
         maybePlayNext()
     }
 
