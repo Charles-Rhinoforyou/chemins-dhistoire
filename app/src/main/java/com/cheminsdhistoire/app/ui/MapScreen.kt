@@ -85,6 +85,7 @@ fun MapScreen(ui: PlayerUiState) {
 
     var destinationText by remember { mutableStateOf("") }
     var itinerary by remember { mutableStateOf<Itinerary?>(null) }
+    var variants by remember { mutableStateOf<List<Itinerary>?>(null) }
     var route by remember { mutableStateOf<RoadRoute?>(null) }
     var planning by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
@@ -294,7 +295,7 @@ fun MapScreen(ui: PlayerUiState) {
             return
         }
 
-        // MODE ITINÉRAIRE : étapes remarquables le long de la route.
+        // MODE ITINÉRAIRE : on propose plusieurs variantes au choix.
         val origin = ui.location
         if (origin == null) {
             errorMsg = "Position GPS non disponible : lancez l'écoute d'abord (onglet Écoute)."
@@ -304,6 +305,9 @@ fun MapScreen(ui: PlayerUiState) {
         errorMsg = null
         route = null
         destPlaces = null
+        itinerary = null
+        variants = null
+        com.cheminsdhistoire.app.map.RouteHolder.clear()
         scope.launch {
             val dest = geocoder.geocode(destinationText)
             if (dest == null) {
@@ -311,22 +315,29 @@ fun MapScreen(ui: PlayerUiState) {
                 planning = false
                 return@launch
             }
-            val itin = planner.plan(origin, dest.point, dest.name, era = ui.eraFilter, themes = ui.themeFilter)
-            itinerary = itin
-            com.cheminsdhistoire.app.map.RouteHolder.set(itin, null)
-            if (itin.stops.isEmpty()) {
-                errorMsg = "Peu de lieux remarquables trouvés sur ce trajet."
-            } else {
-                // Trace le vrai parcours routier passant par toutes les étapes.
-                val waypoints = buildList {
-                    add(origin)
-                    itin.stops.forEach { add(com.cheminsdhistoire.app.model.GeoPoint(it.lat, it.lon)) }
-                    add(itin.destination)
-                }
-                route = router.route(waypoints)
-                com.cheminsdhistoire.app.map.RouteHolder.set(itin, route)
-            }
+            val vs = planner.planVariants(
+                origin, dest.point, dest.name, era = ui.eraFilter, themes = ui.themeFilter
+            )
+            variants = vs
+            if (vs.isEmpty()) errorMsg = "Peu de lieux remarquables trouvés sur ce trajet."
             planning = false
+        }
+    }
+
+    // Choisit une variante : trace alors son vrai parcours routier.
+    fun chooseVariant(itin: Itinerary) {
+        variants = null
+        itinerary = itin
+        route = null
+        com.cheminsdhistoire.app.map.RouteHolder.set(itin, null)
+        scope.launch {
+            val waypoints = buildList {
+                add(itin.origin)
+                itin.stops.forEach { add(com.cheminsdhistoire.app.model.GeoPoint(it.lat, it.lon)) }
+                add(itin.destination)
+            }
+            route = router.route(waypoints)
+            com.cheminsdhistoire.app.map.RouteHolder.set(itin, route)
         }
     }
 
@@ -342,7 +353,7 @@ fun MapScreen(ui: PlayerUiState) {
                 selected = !destinationMode,
                 onClick = {
                     destinationMode = false
-                    destPlaces = null; itinerary = null; route = null; errorMsg = null
+                    destPlaces = null; itinerary = null; route = null; variants = null; errorMsg = null
                     com.cheminsdhistoire.app.map.RouteHolder.clear()
                 },
                 label = { Text("Itinéraire") }
@@ -351,7 +362,7 @@ fun MapScreen(ui: PlayerUiState) {
                 selected = destinationMode,
                 onClick = {
                     destinationMode = true
-                    destPlaces = null; itinerary = null; route = null; errorMsg = null
+                    destPlaces = null; itinerary = null; route = null; variants = null; errorMsg = null
                     com.cheminsdhistoire.app.map.RouteHolder.clear()
                 },
                 label = { Text("Destination") }
@@ -398,7 +409,7 @@ fun MapScreen(ui: PlayerUiState) {
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = {
-                    itinerary = null; route = null; centered = false
+                    itinerary = null; route = null; variants = null; centered = false
                     com.cheminsdhistoire.app.map.RouteHolder.clear()
                 }) {
                     Icon(Icons.Filled.Close, contentDescription = "Effacer l'itinéraire")
@@ -451,6 +462,52 @@ fun MapScreen(ui: PlayerUiState) {
                     onClose = { selected.value = null },
                     modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp)
                 )
+            }
+        }
+
+        val proposals = variants
+        if (itinerary == null && proposals != null && proposals.isNotEmpty()) {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 190.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    "Choisissez votre itinéraire",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                proposals.forEach { v ->
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        )
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "${v.label} · ${v.stops.size} étapes",
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    v.stops.joinToString(" → ") { it.title }
+                                        .let { if (it.length > 70) it.take(70) + "…" else it },
+                                    fontSize = 12.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Button(onClick = { chooseVariant(v) }) { Text("Choisir") }
+                        }
+                    }
+                }
             }
         }
 

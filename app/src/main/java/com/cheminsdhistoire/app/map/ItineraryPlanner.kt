@@ -12,16 +12,26 @@ data class Itinerary(
     val origin: GeoPoint,
     val destination: GeoPoint,
     val destinationName: String,
-    val stops: List<HistoryPlace>
+    val stops: List<HistoryPlace>,
+    val label: String = ""
 )
 
 /**
- * Construit un itinéraire « scénique » : parmi les lieux historiques situés dans le
- * couloir entre le départ et la destination, retient les plus intéressants puis les
- * ordonne dans le sens de la route (pas de retour en arrière).
+ * Construit des itinéraires « scéniques » : parmi les lieux historiques situés dans le
+ * couloir entre le départ et la destination, retient les plus intéressants et les ordonne
+ * dans le sens de la route (la dernière étape est toujours la plus proche de la destination).
  */
 class ItineraryPlanner(private val wiki: WikipediaService) {
 
+    private data class Scored(
+        val place: HistoryPlace,
+        val t: Double,
+        val interest: Double,
+        val distToDest: Double,
+        val perp: Double
+    )
+
+    /** Un seul itinéraire (compat.). */
     suspend fun plan(
         origin: GeoPoint,
         destination: GeoPoint,
@@ -31,6 +41,36 @@ class ItineraryPlanner(private val wiki: WikipediaService) {
         maxStops: Int = 8,
         corridorHalfWidthMeters: Double = 12_000.0
     ): Itinerary = withContext(Dispatchers.IO) {
+        val scored = fetchScored(origin, destination, era, themes, corridorHalfWidthMeters)
+        select(origin, destination, destinationName, scored, maxStops, byDetour = false, label = "")
+    }
+
+    /** Plusieurs itinéraires au choix, à partir d'une seule collecte de candidats. */
+    suspend fun planVariants(
+        origin: GeoPoint,
+        destination: GeoPoint,
+        destinationName: String,
+        era: Era = Era.TOUTES,
+        themes: Set<Theme> = emptySet()
+    ): List<Itinerary> = withContext(Dispatchers.IO) {
+        val scored = fetchScored(origin, destination, era, themes, corridorHalfWidthMeters = 15_000.0)
+        if (scored.isEmpty()) return@withContext emptyList()
+        val variants = listOf(
+            select(origin, destination, destinationName, scored, 3, byDetour = false, label = "L'essentiel"),
+            select(origin, destination, destinationName, scored, 7, byDetour = false, label = "Complet"),
+            select(origin, destination, destinationName, scored, 5, byDetour = true, label = "Au plus court")
+        ).filter { it.stops.isNotEmpty() }
+        // Dédoublonne les variantes qui aboutissent à la même liste d'étapes.
+        variants.distinctBy { v -> v.stops.map { it.pageId } }
+    }
+
+    private suspend fun fetchScored(
+        origin: GeoPoint,
+        destination: GeoPoint,
+        era: Era,
+        themes: Set<Theme>,
+        corridorHalfWidthMeters: Double
+    ): List<Scored> {
         val lat0 = Math.toRadians(origin.lat)
         val r = 6_371_000.0
         fun toXY(p: GeoPoint): Pair<Double, Double> {
@@ -43,7 +83,6 @@ class ItineraryPlanner(private val wiki: WikipediaService) {
         val lenSq = dx * dx + dy * dy
         val totalMeters = kotlin.math.sqrt(lenSq)
 
-        // Échantillonne des points le long de la ligne départ -> destination.
         val samples = (totalMeters / 15_000.0).roundToInt().coerceIn(3, 10)
         val candidates = LinkedHashMap<Long, HistoryPlace>()
         for (i in 0..samples) {
@@ -55,9 +94,7 @@ class ItineraryPlanner(private val wiki: WikipediaService) {
             }
         }
 
-        data class Scored(val place: HistoryPlace, val t: Double, val score: Double, val distToDest: Double)
-
-        val scored = candidates.values.mapNotNull { p ->
+        return candidates.values.mapNotNull { p ->
             if (!EraClassifier.matches(p, era)) return@mapNotNull null
             if (!ThemeClassifier.matches(p, themes)) return@mapNotNull null
             val (px, py) = toXY(GeoPoint(p.lat, p.lon))
@@ -67,23 +104,29 @@ class ItineraryPlanner(private val wiki: WikipediaService) {
             val interest = (if (p.thumbnailUrl != null) 2.0 else 0.0) +
                 (p.extract.length / 150.0).coerceAtMost(5.0)
             val distToDest = hypot(px - dx, py - dy)
-            Scored(p, t.coerceIn(0.0, 1.0), interest, distToDest)
+            Scored(p, t.coerceIn(0.0, 1.0), interest, distToDest, perp)
         }
+    }
 
-        val best = if (scored.isEmpty()) {
+    private fun select(
+        origin: GeoPoint,
+        destination: GeoPoint,
+        destinationName: String,
+        scored: List<Scored>,
+        maxStops: Int,
+        byDetour: Boolean,
+        label: String
+    ): Itinerary {
+        val stops = if (scored.isEmpty()) {
             emptyList()
         } else {
-            // La DERNIÈRE étape est le lieu le plus proche de la destination.
             val finalStop = scored.minByOrNull { it.distToDest }!!
-            // Les étapes intermédiaires (avant lui) sont choisies par intérêt, ordonnées le long de la route.
-            val middle = scored
-                .filter { it !== finalStop && it.t < finalStop.t }
-                .sortedByDescending { it.score }
-                .take((maxStops - 1).coerceAtLeast(0))
-                .sortedBy { it.t }
+            val middlePool = scored.filter { it !== finalStop && it.t < finalStop.t }
+            val ranked = if (byDetour) middlePool.sortedBy { it.perp }
+            else middlePool.sortedByDescending { it.interest }
+            val middle = ranked.take((maxStops - 1).coerceAtLeast(0)).sortedBy { it.t }
             middle.map { it.place } + finalStop.place
         }
-
-        Itinerary(origin, destination, destinationName, best)
+        return Itinerary(origin, destination, destinationName, stops, label)
     }
 }
